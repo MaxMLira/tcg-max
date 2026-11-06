@@ -64,6 +64,10 @@ type Card struct {
 	def     int
 	weight  int
 	subtype MonsterSubtype // the card's own subtype; set for Monsters only
+
+	// acceptedSubtype is the Monster subtype an Equipment card is compatible
+	// with; set only by NewEquipmentCard. It is not the card's own subtype.
+	acceptedSubtype MonsterSubtype
 }
 
 // NewCard validates and builds a card definition.
@@ -135,6 +139,29 @@ func NewCard(id CardID, name string, typ CardType, atk, def, weight int, subtype
 	}, nil
 }
 
+// NewEquipmentCard validates and builds a Magic Equipment card definition that
+// declares the one Monster subtype it accepts (game-rules §35.2,
+// docs/mvp-story-mode.md §1.4 and assumption A3).
+//
+// The result is a Magic card (ATK, DEF and Weight zero) without an own subtype:
+// the accepted subtype describes which Monsters the Equipment is compatible
+// with and is a different fact from Subtype. The id and name rules are those of
+// NewCard. The accepted subtype is required and must not be the zero value.
+//
+// The +800 ATK bonus, placement, activation and linking are Equipment behavior
+// outside the card definition (task S5) and are not modeled here.
+func NewEquipmentCard(id CardID, name string, accepted MonsterSubtype) (*Card, error) {
+	card, err := NewCard(id, name, CardTypeMagic, 0, 0, 0, MonsterSubtype{})
+	if err != nil {
+		return nil, err
+	}
+	if accepted.IsZero() {
+		return nil, fmt.Errorf("%w: equipment requires an accepted subtype", ErrInvalidCard)
+	}
+	card.acceptedSubtype = accepted
+	return card, nil
+}
+
 // ID returns the card identity.
 func (c *Card) ID() CardID { return c.id }
 
@@ -157,3 +184,21 @@ func (c *Card) Weight() int { return c.weight }
 // Subtype returns the card's own Monster subtype. It is the zero value for
 // Magic and Trap cards, which have no subtype (docs/mvp-story-mode.md §1.3).
 func (c *Card) Subtype() MonsterSubtype { return c.subtype }
+
+// AcceptedMonsterSubtype returns the Monster subtype an Equipment card is
+// compatible with. It is the zero value for every card that is not an
+// Equipment, including a Magic created by NewCard, which stays valid without
+// one. It is distinct from Subtype, the card's own subtype.
+func (c *Card) AcceptedMonsterSubtype() MonsterSubtype { return c.acceptedSubtype }
+
+// AcceptsMonsterSubtype reports whether the card declares an accepted subtype
+// and it is the same as s. It is false when the card declares none or when s is
+// the zero value. It is a pure query on the definition: it does not link
+// Equipment to a Monster, apply the +800 ATK bonus or check the duel state;
+// those belong to the Equipment behavior of task S5.
+func (c *Card) AcceptsMonsterSubtype(s MonsterSubtype) bool {
+	if c.acceptedSubtype.IsZero() || s.IsZero() {
+		return false
+	}
+	return c.acceptedSubtype.Equals(s)
+}

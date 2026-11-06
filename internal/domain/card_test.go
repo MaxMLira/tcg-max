@@ -346,3 +346,247 @@ func TestCardType_StringNamesSupportedTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestNewCard_MagicWithoutAcceptedSubtypeIsValidAndAcceptsNothing(t *testing.T) {
+	// Arrange
+	card := mustCard(t, "MAGIC-1", "Burn", CardTypeMagic, 0, 0, 0, MonsterSubtype{})
+
+	// Act
+	accepted := card.AcceptedMonsterSubtype()
+
+	// Assert
+	if !accepted.IsZero() {
+		t.Errorf("AcceptedMonsterSubtype() = %q, want the zero value", accepted)
+	}
+	for _, subtype := range []MonsterSubtype{SubtypeDragon(), SubtypeWarrior(), SubtypeMage(), SubtypeAquatic(), {}} {
+		if card.AcceptsMonsterSubtype(subtype) {
+			t.Errorf("AcceptsMonsterSubtype(%q) = true, want false", subtype)
+		}
+	}
+}
+
+func TestNewEquipmentCard_BuildsAMagicCardThatDeclaresItsAcceptedSubtype(t *testing.T) {
+	// Arrange
+
+	// Act
+	card, err := NewEquipmentCard("EQUIP-1", "Dragon Equipment", SubtypeDragon())
+
+	// Assert
+	if err != nil {
+		t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+	}
+	if card == nil {
+		t.Fatal("NewEquipmentCard returned a nil card without an error")
+	}
+	if card.ID() != "EQUIP-1" || card.Name() != "Dragon Equipment" {
+		t.Errorf("identity = (%q, %q), want (EQUIP-1, Dragon Equipment)", card.ID(), card.Name())
+	}
+	if card.Type() != CardTypeMagic {
+		t.Errorf("Type() = %v, want Magic", card.Type())
+	}
+	if card.ATK() != 0 || card.DEF() != 0 || card.Weight() != 0 {
+		t.Errorf("values = (%d, %d, %d), want (0, 0, 0)", card.ATK(), card.DEF(), card.Weight())
+	}
+	if !card.Subtype().IsZero() {
+		t.Errorf("Subtype() = %q, want the zero value", card.Subtype())
+	}
+	if !card.AcceptedMonsterSubtype().Equals(SubtypeDragon()) {
+		t.Errorf("AcceptedMonsterSubtype() = %q, want %q", card.AcceptedMonsterSubtype(), SubtypeDragon())
+	}
+}
+
+func TestNewEquipmentCard_OwnSubtypeAndAcceptedSubtypeAreDistinctFacts(t *testing.T) {
+	// Arrange
+	card, err := NewEquipmentCard("EQUIP-1", "Mage Equipment", SubtypeMage())
+	if err != nil {
+		t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+	}
+
+	// Act
+	own := card.Subtype()
+	accepted := card.AcceptedMonsterSubtype()
+
+	// Assert
+	if !own.IsZero() {
+		t.Errorf("Subtype() = %q, want the zero value", own)
+	}
+	if accepted.IsZero() {
+		t.Error("AcceptedMonsterSubtype() is the zero value, want a subtype")
+	}
+}
+
+func TestNewEquipmentCard_SubtypeIsTheZeroValue(t *testing.T) {
+	accepted := []MonsterSubtype{SubtypeDragon(), SubtypeWarrior(), SubtypeMage(), SubtypeAquatic()}
+
+	for _, subtype := range accepted {
+		t.Run(subtype.String(), func(t *testing.T) {
+			// Arrange
+			card, err := NewEquipmentCard("EQUIP-1", subtype.String()+" Equipment", subtype)
+			if err != nil {
+				t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+			}
+
+			// Act
+			own := card.Subtype()
+
+			// Assert
+			if own != (MonsterSubtype{}) {
+				t.Errorf("Subtype() = %q, want the zero value", own)
+			}
+			if !own.IsZero() {
+				t.Errorf("Subtype().IsZero() = false, want true")
+			}
+		})
+	}
+}
+
+func TestEquipment_DoesNotTakeAMonsterSubtypeAsItsOwn(t *testing.T) {
+	subtypes := []MonsterSubtype{SubtypeDragon(), SubtypeWarrior(), SubtypeMage(), SubtypeAquatic()}
+
+	for _, subtype := range subtypes {
+		t.Run(subtype.String(), func(t *testing.T) {
+			// Arrange
+
+			// Act
+			rejected, err := NewCard("EQUIP-1", subtype.String()+" Equipment", CardTypeMagic, 0, 0, 0, subtype)
+			equipment, equipmentErr := NewEquipmentCard("EQUIP-2", subtype.String()+" Equipment", subtype)
+
+			// Assert
+			if !errors.Is(err, ErrInvalidCard) {
+				t.Fatalf("NewCard(Magic, %q) error = %v, want ErrInvalidCard", subtype, err)
+			}
+			if rejected != nil {
+				t.Errorf("card = %v, want nil", rejected)
+			}
+			if equipmentErr != nil {
+				t.Fatalf("NewEquipmentCard returned unexpected error: %v", equipmentErr)
+			}
+			if !equipment.Subtype().IsZero() {
+				t.Errorf("Subtype() = %q, want the zero value", equipment.Subtype())
+			}
+			if !equipment.AcceptedMonsterSubtype().Equals(subtype) {
+				t.Errorf("AcceptedMonsterSubtype() = %q, want %q", equipment.AcceptedMonsterSubtype(), subtype)
+			}
+		})
+	}
+}
+
+func TestNewEquipmentCard_RejectsInvalidDefinition(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       CardID
+		cname    string
+		accepted MonsterSubtype
+		wantText string
+	}{
+		{name: "zero accepted subtype", id: "EQUIP-1", cname: "Equipment", accepted: MonsterSubtype{}, wantText: "accepted subtype"},
+		{name: "blank id", id: "  ", cname: "Equipment", accepted: SubtypeDragon(), wantText: "id"},
+		{name: "empty id", id: "", cname: "Equipment", accepted: SubtypeDragon(), wantText: "id"},
+		{name: "blank name", id: "EQUIP-1", cname: " \t", accepted: SubtypeDragon(), wantText: "name"},
+		{name: "empty name", id: "EQUIP-1", cname: "", accepted: SubtypeDragon(), wantText: "name"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewEquipmentCard(tc.id, tc.cname, tc.accepted)
+
+			// Assert
+			if !errors.Is(err, ErrInvalidCard) {
+				t.Fatalf("error = %v, want ErrInvalidCard", err)
+			}
+			if card != nil {
+				t.Errorf("card = %v, want nil", card)
+			}
+			if !strings.Contains(err.Error(), tc.wantText) {
+				t.Errorf("error message %q does not mention %q", err, tc.wantText)
+			}
+		})
+	}
+}
+
+func TestCard_AcceptsMonsterSubtypeOnlyForItsAcceptedSubtype(t *testing.T) {
+	mvp := []struct {
+		name    string
+		subtype MonsterSubtype
+	}{
+		{name: "Dragon", subtype: SubtypeDragon()},
+		{name: "Warrior", subtype: SubtypeWarrior()},
+		{name: "Mage", subtype: SubtypeMage()},
+		{name: "Aquatic", subtype: SubtypeAquatic()},
+	}
+
+	for _, accepted := range mvp {
+		t.Run(accepted.name+" equipment", func(t *testing.T) {
+			// Arrange
+			card, err := NewEquipmentCard("EQUIP-1", accepted.name+" Equipment", accepted.subtype)
+			if err != nil {
+				t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+			}
+
+			for _, candidate := range mvp {
+				// Act
+				got := card.AcceptsMonsterSubtype(candidate.subtype)
+
+				// Assert
+				want := candidate.name == accepted.name
+				if got != want {
+					t.Errorf("AcceptsMonsterSubtype(%s) = %v, want %v", candidate.name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestCard_AcceptsMonsterSubtypeIgnoresCaseAndSpacing(t *testing.T) {
+	// Arrange
+	card, err := NewEquipmentCard("EQUIP-1", "Dragon Equipment", SubtypeDragon())
+	if err != nil {
+		t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+	}
+	variant, err := NewMonsterSubtype("  dRAGON ")
+	if err != nil {
+		t.Fatalf("NewMonsterSubtype failed: %v", err)
+	}
+
+	// Act
+	got := card.AcceptsMonsterSubtype(variant)
+
+	// Assert
+	if !got {
+		t.Error(`AcceptsMonsterSubtype("  dRAGON ") = false, want true`)
+	}
+}
+
+func TestCard_AcceptsMonsterSubtypeRejectsTheZeroSubtype(t *testing.T) {
+	// Arrange
+	card, err := NewEquipmentCard("EQUIP-1", "Dragon Equipment", SubtypeDragon())
+	if err != nil {
+		t.Fatalf("NewEquipmentCard returned unexpected error: %v", err)
+	}
+
+	// Act
+	got := card.AcceptsMonsterSubtype(MonsterSubtype{})
+
+	// Assert
+	if got {
+		t.Error("AcceptsMonsterSubtype(zero) = true, want false")
+	}
+}
+
+func TestCard_MonsterNeverAcceptsAnySubtype(t *testing.T) {
+	// Arrange
+	monster := mustCard(t, "CARD-1", "Card", CardTypeMonster, 1000, 1000, 4, SubtypeDragon())
+
+	// Act & Assert
+	for _, subtype := range []MonsterSubtype{SubtypeDragon(), SubtypeWarrior(), SubtypeMage(), SubtypeAquatic(), {}} {
+		if monster.AcceptsMonsterSubtype(subtype) {
+			t.Errorf("AcceptsMonsterSubtype(%q) = true, want false", subtype)
+		}
+	}
+	if !monster.AcceptedMonsterSubtype().IsZero() {
+		t.Errorf("AcceptedMonsterSubtype() = %q, want the zero value", monster.AcceptedMonsterSubtype())
+	}
+}
