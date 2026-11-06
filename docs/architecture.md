@@ -250,10 +250,37 @@ Card
 ├── Attack
 ├── Defense
 ├── Weight
+├── MonsterSubtype
+├── AcceptedMonsterSubtype
 └── Effect
 ```
 
 A Card represents what the card is, not its runtime state during a Duel.
+
+### MonsterSubtype
+
+`MonsterSubtype` is the subtype of a Monster (for example Dragon, Warrior, Mage, Aquatic).
+
+It is an extensible validated value type, not a closed enumeration:
+
+* it has a private name and a validating constructor;
+* the name is trimmed of surrounding whitespace and must not be blank;
+* subtypes are compared case-insensitively through `Equals`;
+* the zero value means "no subtype".
+
+Every Monster has a subtype. Magic and Trap cards have none.
+
+New subtypes can be added without changing the domain model.
+
+### AcceptedMonsterSubtype
+
+`AcceptedMonsterSubtype` is the Monster subtype an Equipment card is compatible with.
+
+It is a separate fact from the card's own `MonsterSubtype`: an Equipment is a Magic card, so its own subtype is always empty, and it declares the subtype of the Monsters it can equip.
+
+A Magic card without an `AcceptedMonsterSubtype` is valid.
+
+`Card.AcceptsMonsterSubtype` only answers whether the definition is compatible with a subtype. Placing, activating and linking Equipment, and the ATK bonus, are Duel behavior and do not belong to the `Card` definition.
 
 ---
 
