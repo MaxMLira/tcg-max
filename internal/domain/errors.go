@@ -12,6 +12,10 @@ var (
 	// (missing identity, negative combat values, unsupported card type, ...).
 	ErrInvalidCard = errors.New("invalid card")
 
+	// ErrInvalidSubtype reports a Monster subtype that violates its own
+	// invariant: a subtype must not be blank.
+	ErrInvalidSubtype = errors.New("invalid subtype")
+
 	// ErrInvalidDeck reports a malformed deck composition: a nil card, an entry
 	// without copies, or a composition that cannot be interpreted.
 	ErrInvalidDeck = errors.New("invalid deck")
