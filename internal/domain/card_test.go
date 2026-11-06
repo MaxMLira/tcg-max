@@ -1,0 +1,224 @@
+package domain
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+// mustCard builds a valid card definition or fails the test. Tests never
+// construct a Card by bypassing NewCard's validation.
+func mustCard(t *testing.T, id CardID, name string, typ CardType, atk, def, weight int) *Card {
+	t.Helper()
+
+	card, err := NewCard(id, name, typ, atk, def, weight)
+	if err != nil {
+		t.Fatalf("NewCard(%q, %q, %v, %d, %d, %d) failed: %v", id, name, typ, atk, def, weight, err)
+	}
+	return card
+}
+
+func TestNewCard_CreatesDefinitionForEachCardType(t *testing.T) {
+	tests := []struct {
+		name string
+		typ  CardType
+	}{
+		{name: "Monster", typ: CardTypeMonster},
+		{name: "Trap", typ: CardTypeTrap},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewCard(CardID("CARD-"+tc.name), "Card "+tc.name, tc.typ, 1500, 1200, 4)
+
+			// Assert
+			if err != nil {
+				t.Fatalf("NewCard returned unexpected error: %v", err)
+			}
+			if card == nil {
+				t.Fatal("NewCard returned a nil card without an error")
+			}
+			if card.ID() != CardID("CARD-"+tc.name) {
+				t.Errorf("ID() = %q, want %q", card.ID(), "CARD-"+tc.name)
+			}
+			if card.Name() != "Card "+tc.name {
+				t.Errorf("Name() = %q, want %q", card.Name(), "Card "+tc.name)
+			}
+			if card.Type() != tc.typ {
+				t.Errorf("Type() = %v, want %v", card.Type(), tc.typ)
+			}
+			if card.ATK() != 1500 {
+				t.Errorf("ATK() = %d, want 1500", card.ATK())
+			}
+			if card.DEF() != 1200 {
+				t.Errorf("DEF() = %d, want 1200", card.DEF())
+			}
+			if card.Weight() != 4 {
+				t.Errorf("Weight() = %d, want 4", card.Weight())
+			}
+		})
+	}
+}
+
+func TestNewCard_MagicHasNoCombatStatsOrWeight(t *testing.T) {
+	// Arrange
+
+	// Act
+	card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, 0, 0, 0)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("NewCard returned unexpected error: %v", err)
+	}
+	if card.Type() != CardTypeMagic || card.ATK() != 0 || card.DEF() != 0 || card.Weight() != 0 {
+		t.Errorf("card = (%v, %d, %d, %d), want (Magic, 0, 0, 0)",
+			card.Type(), card.ATK(), card.DEF(), card.Weight())
+	}
+}
+
+func TestNewCard_RejectsMagicWithMonsterAttributes(t *testing.T) {
+	tests := []struct {
+		name   string
+		atk    int
+		def    int
+		weight int
+	}{
+		{name: "atk", atk: 1, def: 0, weight: 0},
+		{name: "def", atk: 0, def: 1, weight: 0},
+		{name: "weight", atk: 0, def: 0, weight: 1},
+		{name: "negative atk", atk: -1, def: 0, weight: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, tc.atk, tc.def, tc.weight)
+
+			// Assert
+			if !errors.Is(err, ErrInvalidCard) {
+				t.Fatalf("error = %v, want ErrInvalidCard", err)
+			}
+			if card != nil {
+				t.Errorf("card = %v, want nil", card)
+			}
+		})
+	}
+}
+
+func TestNewCard_AcceptsBoundaryValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		atk    int
+		def    int
+		weight int
+	}{
+		{name: "zero attack and defense", atk: 0, def: 0, weight: 1},
+		{name: "weight above tribute tiers", atk: 3000, def: 2500, weight: 13},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewCard("CARD-1", "Card", CardTypeMonster, tc.atk, tc.def, tc.weight)
+
+			// Assert
+			if err != nil {
+				t.Fatalf("NewCard returned unexpected error: %v", err)
+			}
+			if card.ATK() != tc.atk || card.DEF() != tc.def || card.Weight() != tc.weight {
+				t.Errorf("values = (%d, %d, %d), want (%d, %d, %d)",
+					card.ATK(), card.DEF(), card.Weight(), tc.atk, tc.def, tc.weight)
+			}
+		})
+	}
+}
+
+func TestNewCard_RejectsInvalidDefinition(t *testing.T) {
+	tests := []struct {
+		name   string
+		id     CardID
+		cname  string
+		typ    CardType
+		atk    int
+		def    int
+		weight int
+	}{
+		{name: "empty id", id: "", cname: "Card", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "blank id with spaces", id: "   ", cname: "Card", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "blank id with tab", id: "\t", cname: "Card", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "blank name with spaces", id: "CARD-1", cname: "  ", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "blank name with newline", id: "CARD-1", cname: "\n ", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "empty name", id: "CARD-1", cname: "", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 4},
+		{name: "unknown card type", id: "CARD-1", cname: "Card", typ: CardType(99), atk: 1000, def: 1000, weight: 4},
+		{name: "zero card type", id: "CARD-1", cname: "Card", typ: CardType(0), atk: 1000, def: 1000, weight: 4},
+		{name: "negative attack", id: "CARD-1", cname: "Card", typ: CardTypeMonster, atk: -1, def: 1000, weight: 4},
+		{name: "negative defense", id: "CARD-1", cname: "Card", typ: CardTypeMonster, atk: 1000, def: -1, weight: 4},
+		{name: "zero weight", id: "CARD-1", cname: "Card", typ: CardTypeMonster, atk: 1000, def: 1000, weight: 0},
+		{name: "negative weight", id: "CARD-1", cname: "Card", typ: CardTypeMonster, atk: 1000, def: 1000, weight: -5},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewCard(tc.id, tc.cname, tc.typ, tc.atk, tc.def, tc.weight)
+
+			// Assert
+			if !errors.Is(err, ErrInvalidCard) {
+				t.Fatalf("error = %v, want ErrInvalidCard", err)
+			}
+			if card != nil {
+				t.Errorf("card = %v, want nil", card)
+			}
+		})
+	}
+}
+
+func TestNewCard_ErrorDescribesTheViolation(t *testing.T) {
+	// Arrange
+
+	// Act
+	_, err := NewCard("", "Card", CardTypeMonster, 1000, 1000, 4)
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "id") {
+		t.Errorf("error message %q does not mention the offending field", err)
+	}
+}
+
+func TestCardType_StringNamesSupportedTypes(t *testing.T) {
+	tests := []struct {
+		typ  CardType
+		want string
+	}{
+		{typ: CardTypeMonster, want: "Monster"},
+		{typ: CardTypeMagic, want: "Magic"},
+		{typ: CardTypeTrap, want: "Trap"},
+		{typ: CardType(99), want: "CardType(99)"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			got := tc.typ.String()
+
+			// Assert
+			if got != tc.want {
+				t.Errorf("String() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
