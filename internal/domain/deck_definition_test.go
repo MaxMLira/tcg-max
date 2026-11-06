@@ -17,7 +17,7 @@ func cardID(n int) CardID {
 func deckCard(t *testing.T, n int) *Card {
 	t.Helper()
 
-	return mustCard(t, cardID(n), fmt.Sprintf("Card %d", n), CardTypeMonster, 1000+n, 1000, 1+n%5)
+	return mustCard(t, cardID(n), fmt.Sprintf("Card %d", n), CardTypeMonster, 1000+n, 1000, 1+n%5, SubtypeWarrior())
 }
 
 // singleEntries builds one entry per card with one copy each.

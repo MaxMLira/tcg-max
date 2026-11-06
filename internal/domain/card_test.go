@@ -8,23 +8,24 @@ import (
 
 // mustCard builds a valid card definition or fails the test. Tests never
 // construct a Card by bypassing NewCard's validation.
-func mustCard(t *testing.T, id CardID, name string, typ CardType, atk, def, weight int) *Card {
+func mustCard(t *testing.T, id CardID, name string, typ CardType, atk, def, weight int, subtype MonsterSubtype) *Card {
 	t.Helper()
 
-	card, err := NewCard(id, name, typ, atk, def, weight)
+	card, err := NewCard(id, name, typ, atk, def, weight, subtype)
 	if err != nil {
-		t.Fatalf("NewCard(%q, %q, %v, %d, %d, %d) failed: %v", id, name, typ, atk, def, weight, err)
+		t.Fatalf("NewCard(%q, %q, %v, %d, %d, %d, %q) failed: %v", id, name, typ, atk, def, weight, subtype, err)
 	}
 	return card
 }
 
 func TestNewCard_CreatesDefinitionForEachCardType(t *testing.T) {
 	tests := []struct {
-		name string
-		typ  CardType
+		name    string
+		typ     CardType
+		subtype MonsterSubtype
 	}{
-		{name: "Monster", typ: CardTypeMonster},
-		{name: "Trap", typ: CardTypeTrap},
+		{name: "Monster", typ: CardTypeMonster, subtype: SubtypeDragon()},
+		{name: "Trap", typ: CardTypeTrap, subtype: MonsterSubtype{}},
 	}
 
 	for _, tc := range tests {
@@ -32,7 +33,7 @@ func TestNewCard_CreatesDefinitionForEachCardType(t *testing.T) {
 			// Arrange
 
 			// Act
-			card, err := NewCard(CardID("CARD-"+tc.name), "Card "+tc.name, tc.typ, 1500, 1200, 4)
+			card, err := NewCard(CardID("CARD-"+tc.name), "Card "+tc.name, tc.typ, 1500, 1200, 4, tc.subtype)
 
 			// Assert
 			if err != nil {
@@ -59,6 +60,9 @@ func TestNewCard_CreatesDefinitionForEachCardType(t *testing.T) {
 			if card.Weight() != 4 {
 				t.Errorf("Weight() = %d, want 4", card.Weight())
 			}
+			if !card.Subtype().Equals(tc.subtype) {
+				t.Errorf("Subtype() = %q, want %q", card.Subtype(), tc.subtype)
+			}
 		})
 	}
 }
@@ -67,7 +71,7 @@ func TestNewCard_MagicHasNoCombatStatsOrWeight(t *testing.T) {
 	// Arrange
 
 	// Act
-	card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, 0, 0, 0)
+	card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, 0, 0, 0, MonsterSubtype{})
 
 	// Assert
 	if err != nil {
@@ -97,7 +101,7 @@ func TestNewCard_RejectsMagicWithMonsterAttributes(t *testing.T) {
 			// Arrange
 
 			// Act
-			card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, tc.atk, tc.def, tc.weight)
+			card, err := NewCard("MAGIC-1", "Burn", CardTypeMagic, tc.atk, tc.def, tc.weight, MonsterSubtype{})
 
 			// Assert
 			if !errors.Is(err, ErrInvalidCard) {
@@ -126,7 +130,7 @@ func TestNewCard_AcceptsBoundaryValues(t *testing.T) {
 			// Arrange
 
 			// Act
-			card, err := NewCard("CARD-1", "Card", CardTypeMonster, tc.atk, tc.def, tc.weight)
+			card, err := NewCard("CARD-1", "Card", CardTypeMonster, tc.atk, tc.def, tc.weight, SubtypeDragon())
 
 			// Assert
 			if err != nil {
@@ -169,7 +173,7 @@ func TestNewCard_RejectsInvalidDefinition(t *testing.T) {
 			// Arrange
 
 			// Act
-			card, err := NewCard(tc.id, tc.cname, tc.typ, tc.atk, tc.def, tc.weight)
+			card, err := NewCard(tc.id, tc.cname, tc.typ, tc.atk, tc.def, tc.weight, SubtypeDragon())
 
 			// Assert
 			if !errors.Is(err, ErrInvalidCard) {
@@ -182,11 +186,131 @@ func TestNewCard_RejectsInvalidDefinition(t *testing.T) {
 	}
 }
 
+func TestNewCard_RejectsMonsterWithoutSubtype(t *testing.T) {
+	// Arrange
+
+	// Act
+	card, err := NewCard("CARD-1", "Card", CardTypeMonster, 1000, 1000, 4, MonsterSubtype{})
+
+	// Assert
+	if !errors.Is(err, ErrInvalidCard) {
+		t.Fatalf("error = %v, want ErrInvalidCard", err)
+	}
+	if card != nil {
+		t.Errorf("card = %v, want nil", card)
+	}
+	if !strings.Contains(err.Error(), "subtype") {
+		t.Errorf("error message %q does not mention the subtype", err)
+	}
+}
+
+func TestNewCard_MonsterStoresAndReturnsItsSubtype(t *testing.T) {
+	tests := []struct {
+		name    string
+		subtype MonsterSubtype
+	}{
+		{name: "Dragon", subtype: SubtypeDragon()},
+		{name: "Warrior", subtype: SubtypeWarrior()},
+		{name: "Mage", subtype: SubtypeMage()},
+		{name: "Aquatic", subtype: SubtypeAquatic()},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card := mustCard(t, "CARD-1", "Card", CardTypeMonster, 1000, 1000, 4, tc.subtype)
+
+			// Assert
+			if card.Subtype().IsZero() || !card.Subtype().Equals(tc.subtype) {
+				t.Errorf("Subtype() = %q, want %q", card.Subtype(), tc.subtype)
+			}
+		})
+	}
+}
+
+func TestNewCard_MonsterAcceptsANewSubtypeWithoutDomainChanges(t *testing.T) {
+	// Arrange
+	beast, err := NewMonsterSubtype("Beast")
+	if err != nil {
+		t.Fatalf("NewMonsterSubtype failed: %v", err)
+	}
+
+	// Act
+	card := mustCard(t, "CARD-1", "Card", CardTypeMonster, 1000, 1000, 4, beast)
+
+	// Assert
+	if !card.Subtype().Equals(beast) {
+		t.Errorf("Subtype() = %q, want %q", card.Subtype(), beast)
+	}
+}
+
+func TestNewCard_RejectsMagicAndTrapWithASubtype(t *testing.T) {
+	tests := []struct {
+		name   string
+		typ    CardType
+		atk    int
+		def    int
+		weight int
+	}{
+		{name: "Magic", typ: CardTypeMagic, atk: 0, def: 0, weight: 0},
+		{name: "Trap", typ: CardTypeTrap, atk: 1000, def: 1000, weight: 4},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card, err := NewCard("CARD-1", "Card", tc.typ, tc.atk, tc.def, tc.weight, SubtypeDragon())
+
+			// Assert
+			if !errors.Is(err, ErrInvalidCard) {
+				t.Fatalf("error = %v, want ErrInvalidCard", err)
+			}
+			if card != nil {
+				t.Errorf("card = %v, want nil", card)
+			}
+			if !strings.Contains(err.Error(), "subtype") {
+				t.Errorf("error message %q does not mention the subtype", err)
+			}
+		})
+	}
+}
+
+func TestNewCard_MagicAndTrapWithoutSubtypeHaveZeroSubtype(t *testing.T) {
+	tests := []struct {
+		name   string
+		typ    CardType
+		atk    int
+		def    int
+		weight int
+	}{
+		{name: "Magic", typ: CardTypeMagic, atk: 0, def: 0, weight: 0},
+		{name: "Trap", typ: CardTypeTrap, atk: 1000, def: 1000, weight: 4},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+
+			// Act
+			card := mustCard(t, "CARD-1", "Card", tc.typ, tc.atk, tc.def, tc.weight, MonsterSubtype{})
+
+			// Assert
+			if !card.Subtype().IsZero() {
+				t.Errorf("Subtype() = %q, want the zero value", card.Subtype())
+			}
+		})
+	}
+}
+
 func TestNewCard_ErrorDescribesTheViolation(t *testing.T) {
 	// Arrange
 
 	// Act
-	_, err := NewCard("", "Card", CardTypeMonster, 1000, 1000, 4)
+	_, err := NewCard("", "Card", CardTypeMonster, 1000, 1000, 4, SubtypeDragon())
 
 	// Assert
 	if err == nil {

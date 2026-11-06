@@ -55,14 +55,15 @@ func (t CardType) valid() bool {
 //
 // The fields are private so the compiler, not a convention, enforces that rule:
 // the only way to obtain a Card is NewCard, and the only way to read it is
-// through its accessors.
+// through its accessors. A Card has no setters.
 type Card struct {
-	id     CardID
-	name   string
-	typ    CardType
-	atk    int
-	def    int
-	weight int
+	id      CardID
+	name    string
+	typ     CardType
+	atk     int
+	def     int
+	weight  int
+	subtype MonsterSubtype // the card's own subtype; set for Monsters only
 }
 
 // NewCard validates and builds a card definition.
@@ -74,14 +75,20 @@ type Card struct {
 //   - Type must be Monster, Magic or Trap (game-rules §10);
 //   - Monster: ATK and DEF must not be negative (game-rules §63) and Weight must
 //     be at least 1 (game-rules §16);
-//   - Magic: ATK, DEF and Weight are not applicable and must be zero.
+//   - Magic: ATK, DEF and Weight are not applicable and must be zero;
+//   - Monster: subtype is required and must not be the zero value
+//     (game-rules §10.1.1, docs/mvp-story-mode.md §1.3);
+//   - Magic and Trap: subtype must be the zero value, since they have no
+//     Monster subtype (docs/mvp-story-mode.md §1.3).
 //
 // Trap cards are outside the Story Mode MVP; their validation is unchanged
 // (the Monster constraints above apply) and is not decided here.
 //
 // The game rules define no upper bound for ATK, DEF or Weight, so none is
 // enforced here.
-func NewCard(id CardID, name string, typ CardType, atk, def, weight int) (*Card, error) {
+//
+// Callers pass MonsterSubtype{} for Magic and Trap cards.
+func NewCard(id CardID, name string, typ CardType, atk, def, weight int, subtype MonsterSubtype) (*Card, error) {
 	if strings.TrimSpace(string(id)) == "" {
 		return nil, fmt.Errorf("%w: id must not be blank", ErrInvalidCard)
 	}
@@ -109,13 +116,22 @@ func NewCard(id CardID, name string, typ CardType, atk, def, weight int) (*Card,
 		}
 	}
 
+	if typ == CardTypeMonster {
+		if subtype.IsZero() {
+			return nil, fmt.Errorf("%w: monster requires a subtype", ErrInvalidCard)
+		}
+	} else if !subtype.IsZero() {
+		return nil, fmt.Errorf("%w: %s must not have a subtype, got %q", ErrInvalidCard, typ, subtype)
+	}
+
 	return &Card{
-		id:     id,
-		name:   name,
-		typ:    typ,
-		atk:    atk,
-		def:    def,
-		weight: weight,
+		id:      id,
+		name:    name,
+		typ:     typ,
+		atk:     atk,
+		def:     def,
+		weight:  weight,
+		subtype: subtype,
 	}, nil
 }
 
@@ -137,3 +153,7 @@ func (c *Card) DEF() int { return c.def }
 // Weight returns the Weight used to determine the tributes required to Summon
 // the card (game-rules §16).
 func (c *Card) Weight() int { return c.weight }
+
+// Subtype returns the card's own Monster subtype. It is the zero value for
+// Magic and Trap cards, which have no subtype (docs/mvp-story-mode.md §1.3).
+func (c *Card) Subtype() MonsterSubtype { return c.subtype }
