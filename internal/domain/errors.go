@@ -55,4 +55,8 @@ var (
 	// ErrCardNotFound reports an operation on a card instance that is not in
 	// the zone the operation reads from.
 	ErrCardNotFound = errors.New("card not found in zone")
+
+	// ErrFieldFull reports placing a card in a Field area (monster or
+	// Magic/Trap) that has no free slot (game-rules §9.1 and §9.2).
+	ErrFieldFull = errors.New("field area is full")
 )
