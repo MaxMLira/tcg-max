@@ -31,4 +31,15 @@ var (
 	// ErrDuplicateCard reports the same card appearing in more than one deck
 	// entry. Entries are never merged silently, so the composition is rejected.
 	ErrDuplicateCard = errors.New("duplicate card in deck")
+
+	// ErrInvalidInstance reports a card instance that cannot be built: a
+	// missing card definition, a blank identity or a blank owner
+	// (architecture §5.5, game-rules §64).
+	ErrInvalidInstance = errors.New("invalid card instance")
+
+	// ErrInvalidParticipant reports a participant, or a participant-owned
+	// zone, that cannot be built: a blank identity, an identity with
+	// surrounding whitespace or a non-positive life points value (a Duel ends
+	// when Life Points reach 0 or less, mvp-story-mode §1.2).
+	ErrInvalidParticipant = errors.New("invalid participant")
 )
