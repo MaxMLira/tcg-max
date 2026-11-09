@@ -47,4 +47,12 @@ var (
 	// game rules define levels 1 to 10 (game-rules §3.1); only the levels up to
 	// MaxSupportedLevel are supported for now.
 	ErrInvalidLevel = errors.New("invalid level")
+
+	// ErrHandFull reports adding a card to a Hand that already holds the
+	// maximum number of cards (game-rules §5.2).
+	ErrHandFull = errors.New("hand is full")
+
+	// ErrCardNotFound reports an operation on a card instance that is not in
+	// the zone the operation reads from.
+	ErrCardNotFound = errors.New("card not found in zone")
 )
