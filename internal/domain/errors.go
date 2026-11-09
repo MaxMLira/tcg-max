@@ -59,4 +59,9 @@ var (
 	// ErrFieldFull reports placing a card in a Field area (monster or
 	// Magic/Trap) that has no free slot (game-rules §9.1 and §9.2).
 	ErrFieldFull = errors.New("field area is full")
+
+	// ErrDeckEmpty reports drawing from a Deck that has no cards (game-rules
+	// §8). The consequence of the failed draw (losing the Duel) belongs to the
+	// Duel, not to the Deck.
+	ErrDeckEmpty = errors.New("deck is empty")
 )
