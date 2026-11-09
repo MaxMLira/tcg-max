@@ -42,4 +42,9 @@ var (
 	// surrounding whitespace or a non-positive life points value (a Duel ends
 	// when Life Points reach 0 or less, mvp-story-mode §1.2).
 	ErrInvalidParticipant = errors.New("invalid participant")
+
+	// ErrInvalidLevel reports a Story Level outside the supported range. The
+	// game rules define levels 1 to 10 (game-rules §3.1); only the levels up to
+	// MaxSupportedLevel are supported for now.
+	ErrInvalidLevel = errors.New("invalid level")
 )
