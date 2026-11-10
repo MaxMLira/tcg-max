@@ -31,4 +31,37 @@ var (
 	// ErrDuplicateCard reports the same card appearing in more than one deck
 	// entry. Entries are never merged silently, so the composition is rejected.
 	ErrDuplicateCard = errors.New("duplicate card in deck")
+
+	// ErrInvalidInstance reports a card instance that cannot be built: a
+	// missing card definition, a blank identity or a blank owner
+	// (architecture §5.5, game-rules §64).
+	ErrInvalidInstance = errors.New("invalid card instance")
+
+	// ErrInvalidParticipant reports a participant, or a participant-owned
+	// zone, that cannot be built: a blank identity, an identity with
+	// surrounding whitespace or a non-positive life points value (a Duel ends
+	// when Life Points reach 0 or less, mvp-story-mode §1.2).
+	ErrInvalidParticipant = errors.New("invalid participant")
+
+	// ErrInvalidLevel reports a Story Level outside the supported range. The
+	// game rules define levels 1 to 10 (game-rules §3.1); only the levels up to
+	// MaxSupportedLevel are supported for now.
+	ErrInvalidLevel = errors.New("invalid level")
+
+	// ErrHandFull reports adding a card to a Hand that already holds the
+	// maximum number of cards (game-rules §5.2).
+	ErrHandFull = errors.New("hand is full")
+
+	// ErrCardNotFound reports an operation on a card instance that is not in
+	// the zone the operation reads from.
+	ErrCardNotFound = errors.New("card not found in zone")
+
+	// ErrFieldFull reports placing a card in a Field area (monster or
+	// Magic/Trap) that has no free slot (game-rules §9.1 and §9.2).
+	ErrFieldFull = errors.New("field area is full")
+
+	// ErrDeckEmpty reports drawing from a Deck that has no cards (game-rules
+	// §8). The consequence of the failed draw (losing the Duel) belongs to the
+	// Duel, not to the Deck.
+	ErrDeckEmpty = errors.New("deck is empty")
 )

@@ -310,6 +310,8 @@ CardInstance
 └── AttacksPerformed
 ```
 
+Implementation note (Story Mode MVP, task S2): the first implementation stores a reference to the immutable `Card` instead of a `CardID`, and stores `Location` on the instance. `Location` has a single writer, the transfer between the owner's zones performed by the `Participant`, so it always equals the zone that contains the instance. `Position` and `AttacksPerformed` are not modeled yet; they are added with the tasks that need them. See ADR-011.
+
 CardInstance is not the representation of Collection ownership.
 
 The separation is:
@@ -1783,6 +1785,17 @@ JWT is used for initial authentication. Authentication concerns remain outside t
 ## ADR-010 — No Duel Recovery in MVP
 
 An active Duel does not require recovery after server failure in the MVP. If the server loses the active Duel state, the match may be terminated.
+
+## ADR-011 — Domain Package, Participant Transitions and Graveyard Scope (Story Mode MVP)
+
+Status: accepted for the Story Mode MVP.
+
+* The domain types (Card, CardInstance, zones, Participant and, later, Duel) live in one package, `internal/domain`. Splitting zones and participants into sub-packages would force exported zone mutators and risks import cycles. The package layout sketched in section 4 may still evolve.
+* The `Participant` owns its four zones (Deck, Hand, Field, Graveyard). Zone mutators are unexported, so cards move only through the `Participant` transitions (Draw, DiscardFromHand, PlaceFromHand, SendFieldCardToGraveyard). Each transition checks the source and the target before mutating, so a rejected move leaves all state unchanged.
+* The Graveyard is one per Participant and holds only its owner's cards. It stays public: both players can read it.
+* The domain holds no lock. A Duel is a sequential state machine, and the caller (the in-memory duel registry) serializes access to it.
+* The two Participants of a Duel must have different ids, because instance ids are `<participant id>#<n>`. The Duel (task S3) must reject duplicates before starting.
+* Only Story levels 1 to 5 are supported in the MVP. Levels 6 to 10 are out of scope for now.
 
 Additional ADRs should only be created when a meaningful architectural decision is made.
 
