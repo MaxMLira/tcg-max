@@ -1797,6 +1797,17 @@ Status: accepted for the Story Mode MVP.
 * The two Participants of a Duel must have different ids, because instance ids are `<participant id>#<n>`. The Duel (task S3) must reject duplicates before starting.
 * Only Story levels 1 to 5 are supported in the MVP. Levels 6 to 10 are out of scope for now.
 
+## ADR-012 — Duel Construction, Seed Call Order and the Finished-State Freeze (Story Mode MVP)
+
+Status: accepted for the Story Mode MVP.
+
+* `NewDuel` builds its two `Participant`s itself from `ParticipantSetup` values (id, `DeckDefinition`, Life Points). Everything is built in local values and the Duel is returned only when every step succeeds, so no partially initialized Duel exists.
+* Equal participant ids are rejected before any shuffle (`ErrInvalidDuel`), as ADR-011 requires; the first setup is built before the second.
+* One injected `Shuffler` per Duel is called in the documented order: the first setup's deck (30), the second setup's deck (30), then a two-element flip that chooses the first player at random (game-rules §6). A failed `NewDuel` may leave the Shuffler advanced; the caller discards it. The seeded `*rand.Rand` is owned by the composition root or the tests, never by the domain.
+* A finished Duel stores only the explicit `DuelResult` (winner, loser, reason); "finished" is derived from it, with no status flag. After a result exists the Duel is frozen: `replenishHand` returns `ErrDuelEnded` (mvp-story-mode §1.2).
+* Hand replenishment is the unexported `replenishHand` on `Participant` and `Duel`. There is no manual draw in the MVP (game-rules §7); later action tasks call it after an action is resolved.
+* Caveat: `Duel.Participant(id)` returns the real `*Participant`, whose exported S2 transitions (for example `Draw`) bypass the Duel freeze. S4 decides whether access narrows to read-only views; until then only the application layer (S10) may talk to the Duel.
+
 Additional ADRs should only be created when a meaningful architectural decision is made.
 
 ---
