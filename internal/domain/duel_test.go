@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -220,5 +221,60 @@ func TestDuel_ParticipantLookup(t *testing.T) {
 	}
 	if okNone || none != nil {
 		t.Errorf("Participant(p3) = %v, %v, want nil, false", none, okNone)
+	}
+}
+
+// permutingShuffler applies a different permutation on every call, in order:
+// reverse reverses the n elements and identity leaves them alone. It records
+// the size of each call.
+type permutingShuffler struct {
+	reverse []bool
+	sizes   []int
+}
+
+func (s *permutingShuffler) Shuffle(n int, swap func(i, j int)) {
+	call := len(s.sizes)
+	s.sizes = append(s.sizes, n)
+	if call >= len(s.reverse) || !s.reverse[call] {
+		return
+	}
+	for i := 0; i < n/2; i++ {
+		swap(i, n-1-i)
+	}
+}
+
+func TestNewDuel_BuildsTheFirstSetupBeforeTheSecondAndFlipsTheCoinLast(t *testing.T) {
+	// Arrange: call 1 (deck of a) reverses, call 2 (deck of b) keeps the
+	// expansion order, call 3 (coin flip) reverses.
+	s := &permutingShuffler{reverse: []bool{true, false, true}}
+
+	// Act
+	d := newTestDuel(t, s)
+
+	// Assert
+	if want := []int{DeckSize, DeckSize, 2}; !slices.Equal(s.sizes, want) {
+		t.Fatalf("Shuffle sizes = %v, want %v", s.sizes, want)
+	}
+
+	// Top of the Deck first: the hand holds the first four cards drawn.
+	wholeDeck := func(id ParticipantID) []InstanceID {
+		p, _ := d.Participant(id)
+		return slices.Concat(ids(p.Hand().Cards()), ids(p.Deck().Cards()))
+	}
+	var reversed, original []InstanceID
+	for n := DeckSize; n >= 1; n-- {
+		reversed = append(reversed, InstanceID(fmt.Sprintf("p1#%d", n)))
+	}
+	for n := 1; n <= DeckSize; n++ {
+		original = append(original, InstanceID(fmt.Sprintf("p2#%d", n)))
+	}
+	if got := wholeDeck("p1"); !slices.Equal(got, reversed) {
+		t.Errorf("deck order of p1 = %v, want the reversed expansion order %v (first shuffle call)", got, reversed)
+	}
+	if got := wholeDeck("p2"); !slices.Equal(got, original) {
+		t.Errorf("deck order of p2 = %v, want the expansion order %v (second shuffle call)", got, original)
+	}
+	if got := d.Turn().Participant(); got != "p2" {
+		t.Errorf("first player = %q, want %q (the third call reverses the two candidates)", got, "p2")
 	}
 }

@@ -28,8 +28,8 @@ type Duel struct {
 }
 
 // NewDuel prepares a Duel between the Participants a and b: it builds both
-// Participants with shuffled decks and chooses the
-// first player at random (game-rules §6 and mvp-story-mode A5).
+// Participants with shuffled decks, deals the opening hands and chooses the
+// first player at random (game-rules §5.1, §6 and mvp-story-mode A5).
 //
 // It is all-or-nothing: everything is built in local values and the Duel is
 // returned only when every step succeeded, so no half-built Duel exists. The
@@ -41,7 +41,10 @@ type Duel struct {
 //     collide. This happens before the Shuffler is used;
 //  3. the Participants are built, a first and then b, each shuffling its Deck
 //     once; the deck, Life Points and nil-Shuffler errors are propagated;
-//  4. the first player is chosen with one more Shuffle over the two ids.
+//  4. each Participant draws its opening hand, a first and then b: exactly 4
+//     cards, with no extra card or advantage for the first player
+//     (Story Mode MVP, game-rules §5.1 and §6);
+//  5. the first player is chosen with one more Shuffle over the two ids.
 //
 // The Duel uses one Shuffler, called with the sizes 30, 30 and 2 in that
 // order. If NewDuel fails the Shuffler may already have advanced, so the
@@ -70,6 +73,15 @@ func NewDuel(a, b ParticipantSetup, s Shuffler) (*Duel, error) {
 	pb, err := NewParticipant(b.ID, b.Deck, b.LifePoints, s)
 	if err != nil {
 		return nil, fmt.Errorf("second participant %q: %w", b.ID, err)
+	}
+
+	// A validated deck has DeckSize cards, so this cannot fail; if it does it
+	// is a programming error and no Duel is returned.
+	if err := pa.replenishHand(); err != nil {
+		return nil, fmt.Errorf("opening hand of %q: %w", a.ID, err)
+	}
+	if err := pb.replenishHand(); err != nil {
+		return nil, fmt.Errorf("opening hand of %q: %w", b.ID, err)
 	}
 
 	candidates := [2]ParticipantID{a.ID, b.ID}
