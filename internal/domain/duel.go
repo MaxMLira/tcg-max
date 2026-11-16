@@ -1,6 +1,9 @@
 package domain
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // ParticipantSetup is the input for one side of a Duel: the Participant id,
 // its deck composition and its starting Life Points. Use InitialLifePoints to
@@ -18,6 +21,11 @@ type ParticipantSetup struct {
 // The Duel engine does not know whether a Participant is a human or an AI
 // (domain rule 10). Whether the Duel is finished is derived from the result
 // (domain rule 4): there is no separate status flag.
+//
+// The Hand is refilled automatically; there is no manual draw (game-rules §7,
+// Story Mode MVP). Because of that the replenishment is the unexported
+// replenishHand, to be called by the Duel after a resolved action. Phases and
+// the advance to the next Turn belong to task S4.
 //
 // A Duel is created by NewDuel; the zero value is not usable. It holds no lock
 // and no Shuffler: it is a sequential state machine serialized by its caller.
@@ -125,3 +133,43 @@ func (d *Duel) Result() (DuelResult, bool) {
 
 // Finished reports whether the Duel has ended.
 func (d *Duel) Finished() bool { return d.result != nil }
+
+// replenishHand refills the Hand of the Participant with the given id up to
+// HandLimit cards (game-rules §5.2 and §7, Story Mode MVP). It is the only way
+// the Duel draws, and it is unexported on purpose: an exported draw would be
+// the manual draw action that the MVP does not have. The actions of later
+// tasks call it after an action is resolved.
+//
+// It returns ErrDuelEnded, wrapped, when the Duel has a result: a finished
+// Duel is frozen. It returns ErrInvalidParticipant for an id that is not in the
+// Duel. A Hand that is already full is left as it is.
+//
+// When the Deck cannot supply the missing cards the Participant loses
+// immediately (game-rules §7 and §8): the other Participant wins with
+// EndReasonDeckOut and nil is returned, because a loss is an outcome of the
+// game, not a rejected action. The Participant's zones are unchanged in that
+// case. Any other error is propagated.
+func (d *Duel) replenishHand(id ParticipantID) error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot replenish the hand of %q", ErrDuelEnded, id)
+	}
+	p, ok := d.Participant(id)
+	if !ok {
+		return fmt.Errorf("%w: %q does not take part in the duel", ErrInvalidParticipant, id)
+	}
+
+	err := p.replenishHand()
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrDeckEmpty) {
+		return err
+	}
+
+	winner := d.participants[0].ID()
+	if winner == id {
+		winner = d.participants[1].ID()
+	}
+	d.result = &DuelResult{winner: winner, loser: id, reason: EndReasonDeckOut}
+	return nil
+}
