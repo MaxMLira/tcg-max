@@ -483,6 +483,40 @@ func TestDuel_ReplenishHandWithAShortDeckEndsTheDuelByDeckOut(t *testing.T) {
 	}
 }
 
+func TestNewDuel_IsDeterministicForTheSameSeed(t *testing.T) {
+	// Arrange
+	build := func() *Duel { return newTestDuel(t, seededShuffler(1, 2)) }
+
+	// Act
+	first, second := build(), build()
+
+	// Assert
+	if first.Turn() != second.Turn() {
+		t.Errorf("first player differs: %v vs %v", first.Turn(), second.Turn())
+	}
+	cardOf := func(d *Duel) map[InstanceID]CardID {
+		m := make(map[InstanceID]CardID)
+		for _, p := range d.Participants() {
+			for _, c := range slices.Concat(p.Hand().Cards(), p.Deck().Cards()) {
+				m[c.ID()] = c.Card().ID()
+			}
+		}
+		return m
+	}
+	if !reflect.DeepEqual(cardOf(first), cardOf(second)) {
+		t.Errorf("InstanceID to CardID mapping differs for the same seed")
+	}
+	for i := range 2 {
+		a, b := first.Participants()[i], second.Participants()[i]
+		if got, want := ids(a.Deck().Cards()), ids(b.Deck().Cards()); !slices.Equal(got, want) {
+			t.Errorf("deck order of %q differs:\n%v\n%v", a.ID(), got, want)
+		}
+		if got, want := ids(a.Hand().Cards()), ids(b.Hand().Cards()); !slices.Equal(got, want) {
+			t.Errorf("hand of %q differs: %v vs %v", a.ID(), got, want)
+		}
+	}
+}
+
 // prepareHandAndDeck leaves p with exactly inHand cards in the Hand and
 // deckLeft in the Deck, using only the exported transitions (the other cards
 // go to the Graveyard).
