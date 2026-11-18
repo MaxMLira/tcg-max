@@ -201,3 +201,32 @@ func (p *Participant) transfer(
 	card.setLocation(to)
 	return nil
 }
+
+// replenishHand draws from the Deck until the Hand holds HandLimit cards. It
+// is the automatic replenishment of the Story Mode MVP: the opening hand is
+// exactly 4 cards (game-rules §5.1) and, after a resolved action, the Hand is
+// refilled up to 4 (game-rules §5.2 and §7). There is no manual draw action
+// (game-rules §7), so this is unexported and only the Duel calls it.
+//
+// It is all-or-nothing. A Hand that already holds HandLimit cards needs no
+// card and nothing changes. When the Deck has fewer cards than the Hand is
+// missing it returns ErrDeckEmpty, wrapped, before moving any card, so the
+// Hand and the Deck are unchanged; the loss that follows is decided by the
+// Duel (game-rules §8), not here. Otherwise it reuses Draw, which cannot fail
+// after the check; any error it returns is propagated, never ignored.
+func (p *Participant) replenishHand() error {
+	need := HandLimit - p.hand.Len()
+	if need <= 0 {
+		return nil
+	}
+	if p.deck.Len() < need {
+		return fmt.Errorf("%w: participant %q needs %d cards to fill the hand, deck has %d",
+			ErrDeckEmpty, p.id, need, p.deck.Len())
+	}
+	for range need {
+		if _, err := p.Draw(); err != nil {
+			return fmt.Errorf("replenish hand of %q failed after validation: %w", p.id, err)
+		}
+	}
+	return nil
+}

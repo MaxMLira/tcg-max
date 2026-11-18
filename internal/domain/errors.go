@@ -64,4 +64,16 @@ var (
 	// §8). The consequence of the failed draw (losing the Duel) belongs to the
 	// Duel, not to the Deck.
 	ErrDeckEmpty = errors.New("deck is empty")
+
+	// ErrInvalidDuel reports a Duel that cannot be built: the two Participants
+	// have the same id, so their InstanceIDs would collide (ADR-011, architecture §40).
+	// Errors of the Participants themselves keep their own sentinels.
+	ErrInvalidDuel = errors.New("invalid duel")
+
+	// ErrDuelEnded reports an operation on a Duel that already has a result:
+	// a finished Duel accepts no further state change. Game-rules §8 defines
+	// only the loss by an exhausted Deck (and §2 that the Duel ends at once);
+	// the freeze itself is the S3 design decision (mvp-story-mode §1.2, "duel
+	// ends immediately").
+	ErrDuelEnded = errors.New("duel has ended")
 )
