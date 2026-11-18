@@ -1808,6 +1808,16 @@ Status: accepted for the Story Mode MVP.
 * Hand replenishment is the unexported `replenishHand` on `Participant` and `Duel`. There is no manual draw in the MVP (game-rules §7); later action tasks call it after an action is resolved.
 * Caveat: `Duel.Participant(id)` returns the real `*Participant`, whose exported S2 transitions (for example `Draw`) bypass the Duel freeze. S4 decides whether access narrows to read-only views; until then only the application layer (S10) may talk to the Duel.
 
+## ADR-013 — Authentication: Argon2id, In-House HS256 JWT and the User Package (S9)
+
+Status: accepted for the Story Mode MVP.
+
+* Player accounts live in `internal/user`, adjacent to `internal/domain`. An account is persistent identity, not a Duel rule, so the rule-only domain gains no auth types. `user` stores only the opaque password hash; it never sees plaintext passwords, the hash algorithm or tokens.
+* `user.Repository` is the persistence contract (atomic `Create`, `ByID`, case-insensitive `ByUsername`). S9 ships the in-memory reference implementation in `internal/repository/memory` so the use cases and integration tests run without external services; the production PostgreSQL store will implement the same contract.
+* Passwords are hashed with Argon2id at fixed parameters (64 MiB memory, 3 iterations, parallelism 2) with a 16-byte CSPRNG salt and a 32-byte key, stored as a self-describing PHC string. The only external crypto dependency is `golang.org/x/crypto` (argon2), per `docs/mvp-story-mode.md` section 1.6.
+* JWTs are issued and verified in-house in `internal/auth` with the standard library only (HS256: `crypto/hmac` + `crypto/sha256`), extending ADR-009. The algorithm is pinned to HS256 on both ends, the signature is verified before any claim is read, claims `sub`/`iat`/`exp` are mandatory, the default TTL is 8 hours, and the HMAC secret is mandatory (at least 32 bytes, no default). If key rotation, asymmetric algorithms or refresh tokens become necessary, this ADR is revisited in favour of a maintained JWT library.
+* Login returns the same error for an unknown user and a wrong password, and both paths run one Argon2id derivation (a dummy hash for unknown users), so user existence can neither be enumerated nor distinguished by timing.
+
 Additional ADRs should only be created when a meaningful architectural decision is made.
 
 ---
