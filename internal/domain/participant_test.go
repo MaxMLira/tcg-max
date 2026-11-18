@@ -737,3 +737,124 @@ func TestParticipant_ZoneAccessorsDoNotLetCallersChangeTheState(t *testing.T) {
 	// Assert
 	assertUnchanged(t, p, before)
 }
+
+// discardUntilDeckHas draws and discards one card at a time until the Deck
+// holds exactly left cards, leaving the Hand as it was. Each cycle moves one
+// Deck card to the Graveyard, using only the exported transitions.
+func discardUntilDeckHas(t *testing.T, p *Participant, left int) {
+	t.Helper()
+
+	for p.Deck().Len() > left {
+		card, err := p.Draw()
+		if err != nil {
+			t.Fatalf("Draw() returned unexpected error: %v", err)
+		}
+		if err := p.DiscardFromHand(card.ID()); err != nil {
+			t.Fatalf("DiscardFromHand() returned unexpected error: %v", err)
+		}
+	}
+}
+
+func TestParticipant_ReplenishHandFillsTheHandUpToTheLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		inHand    int
+		wantDrawn int
+	}{
+		{name: "empty hand draws four", inHand: 0, wantDrawn: 4},
+		{name: "one card draws three", inHand: 1, wantDrawn: 3},
+		{name: "three cards draws one", inHand: 3, wantDrawn: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			p := newTestParticipant(t, "p1")
+			held := drawN(t, p, tt.inHand)
+			deckBefore := ids(p.Deck().Cards())
+
+			// Act
+			err := p.replenishHand()
+
+			// Assert
+			if err != nil {
+				t.Fatalf("replenishHand() returned unexpected error: %v", err)
+			}
+			if p.Hand().Len() != HandLimit {
+				t.Errorf("Hand().Len() = %d, want %d", p.Hand().Len(), HandLimit)
+			}
+			if got, want := p.Deck().Len(), len(deckBefore)-tt.wantDrawn; got != want {
+				t.Errorf("Deck().Len() = %d, want %d (%d draws)", got, want, tt.wantDrawn)
+			}
+			if got, want := ids(p.Deck().Cards()), deckBefore[tt.wantDrawn:]; !slices.Equal(got, want) {
+				t.Errorf("Deck = %v, want the top %d cards removed in order: %v", got, tt.wantDrawn, want)
+			}
+			for i, card := range held {
+				if p.Hand().Cards()[i] != card {
+					t.Errorf("the card held before is no longer at hand position %d", i)
+				}
+			}
+			assertInvariants(t, p)
+		})
+	}
+}
+
+func TestParticipant_ReplenishHandWithAFullHandChangesNothing(t *testing.T) {
+	// Arrange
+	p := newTestParticipant(t, "p1")
+	drawN(t, p, HandLimit)
+	before := stateOf(p)
+
+	// Act
+	err := p.replenishHand()
+
+	// Assert
+	if err != nil {
+		t.Fatalf("replenishHand() returned unexpected error: %v", err)
+	}
+	assertUnchanged(t, p, before)
+}
+
+func TestParticipant_ReplenishHandIsAllOrNothingWhenTheDeckIsShort(t *testing.T) {
+	tests := []struct {
+		name     string
+		deckLeft int
+		inHand   int
+		wantErr  bool
+	}{
+		{name: "two cards for four needed", deckLeft: 2, inHand: 0, wantErr: true},
+		{name: "empty deck for one needed", deckLeft: 0, inHand: 3, wantErr: true},
+		{name: "exactly enough cards", deckLeft: 4, inHand: 0, wantErr: false},
+		{name: "exactly enough cards for the missing one", deckLeft: 1, inHand: 3, wantErr: false},
+		{name: "one card short of four needed", deckLeft: 3, inHand: 0, wantErr: true},
+		{name: "one card short of two needed", deckLeft: 1, inHand: 2, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange: leave deckLeft cards in the Deck and inHand in the Hand.
+			p := newTestParticipant(t, "p1")
+			discardUntilDeckHas(t, p, tt.deckLeft+tt.inHand)
+			drawN(t, p, tt.inHand)
+			before := stateOf(p)
+
+			// Act
+			err := p.replenishHand()
+
+			// Assert
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("replenishHand() returned unexpected error: %v", err)
+				}
+				if p.Hand().Len() != HandLimit || p.Deck().Len() != 0 {
+					t.Errorf("hand, deck = %d, %d, want %d, 0", p.Hand().Len(), p.Deck().Len(), HandLimit)
+				}
+				return
+			}
+			if !errors.Is(err, ErrDeckEmpty) {
+				t.Fatalf("replenishHand() error = %v, want ErrDeckEmpty", err)
+			}
+			assertUnchanged(t, p, before)
+		})
+	}
+}
