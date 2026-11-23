@@ -60,9 +60,10 @@ type Duel struct {
 // PCG source) is created by the composition root or by the tests, never by the
 // domain.
 //
-// The first turn is Turn number FirstTurnNumber of the chosen player; the
-// Phase and the rule that this player cannot attack in that turn come with the
-// turn structure and combat tasks.
+// The first turn is Turn number FirstTurnNumber of the chosen player, in
+// Phase 1. The rule that the first player does not attack in that turn is
+// applied by the combat action of the combat task (game-rules §6,
+// Turn.IsFirst).
 func NewDuel(a, b ParticipantSetup, s Shuffler) (*Duel, error) {
 	if err := validateParticipantID(a.ID); err != nil {
 		return nil, fmt.Errorf("first participant: %w", err)
@@ -99,7 +100,7 @@ func NewDuel(a, b ParticipantSetup, s Shuffler) (*Duel, error) {
 
 	return &Duel{
 		participants: [2]*Participant{pa, pb},
-		turn:         Turn{number: FirstTurnNumber, participant: candidates[0]},
+		turn:         Turn{number: FirstTurnNumber, participant: candidates[0], phase: Phase1},
 	}, nil
 }
 
