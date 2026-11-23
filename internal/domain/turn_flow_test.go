@@ -109,6 +109,24 @@ func TestEndTurn_ResetsThePlacementOfTheNextTurn(t *testing.T) {
 	}
 }
 
+func TestEndTurn_ResetsTheMonstersTurnState(t *testing.T) {
+	// Arrange — p1 changed its monster's position on turn 1.
+	d, id := duelWithMonsterAt(t, PositionAttack, FaceUp)
+	if err := d.ChangePosition(id, PositionDefense, FaceUp); err != nil {
+		t.Fatalf("ChangePosition() = %v", err)
+	}
+	endFullTurn(t, d) // -> p2, turn 2
+	endFullTurn(t, d) // -> p1, turn 3
+
+	// Act — the same monster may change position again on p1's new turn.
+	err := d.ChangePosition(id, PositionAttack, FaceUp)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ChangePosition() on the new turn = %v, want success", err)
+	}
+}
+
 func TestEndPhase1AndEndTurn_RejectedInAFinishedDuel(t *testing.T) {
 	d, _ := finishedDuelWithP1Monster(t)
 
@@ -117,5 +135,34 @@ func TestEndPhase1AndEndTurn_RejectedInAFinishedDuel(t *testing.T) {
 	}
 	if err := d.EndTurn(); !errors.Is(err, ErrDuelEnded) {
 		t.Errorf("EndTurn() = %v, want ErrDuelEnded", err)
+	}
+}
+func TestEndTurn_ResetsTheTurnStateOfBothParticipants(t *testing.T) {
+	// Arrange — turn 1: p1's Monster already changed its position.
+	d, p1Monster := duelWithMonsterAt(t, PositionAttack, FaceUp)
+	if err := d.ChangePosition(p1Monster, PositionDefense, FaceUp); err != nil {
+		t.Fatalf("p1 ChangePosition() = %v", err)
+	}
+	// Turn 2: p2 places its own Monster and changes its position too.
+	endFullTurn(t, d)
+	p2, _ := d.Participant("p2")
+	p2Monster := p2.Hand().Cards()[0].ID()
+	if err := d.Place([]InstanceID{p2Monster}, PositionAttack, FaceUp); err != nil {
+		t.Fatalf("p2 Place() = %v", err)
+	}
+	if err := d.ChangePosition(p2Monster, PositionDefense, FaceUp); err != nil {
+		t.Fatalf("p2 ChangePosition() = %v", err)
+	}
+
+	// Act — end turn 2.
+	endFullTurn(t, d) // -> p1, turn 3
+
+	// Assert — p1's Monster may change again: its flag was reset.
+	if err := d.ChangePosition(p1Monster, PositionAttack, FaceUp); err != nil {
+		t.Fatalf("p1 ChangePosition() on turn 3 = %v, want success", err)
+	}
+	endFullTurn(t, d) // -> p2, turn 4
+	if err := d.ChangePosition(p2Monster, PositionAttack, FaceUp); err != nil {
+		t.Fatalf("p2 ChangePosition() on turn 4 = %v, want success", err)
 	}
 }

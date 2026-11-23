@@ -243,6 +243,50 @@ func (d *Duel) Place(selection []InstanceID, position Position, face Face) error
 	return d.replenishHand(p.ID())
 }
 
+// ChangePosition changes the position of a Monster of the active Participant
+// on its Field (game-rules §21.1). It is a phase 1 action and it does not
+// count as a placement (game-rules §14.2).
+//
+// A face-up Monster switches between Attack and Defense; a face-down Monster
+// is revealed by its controller and enters face-up, in Attack or Defense
+// (game-rules §20). The target must be a coherent pair (a face-down Monster
+// is always in Defense, game-rules §18.2) and different from the current
+// position and face, and a Monster changes its position at most once per turn
+// (mvp-story-mode S4). The restriction that a Monster that attacked in the
+// turn cannot change its position (game-rules §21.1) is enforced by the
+// combat state of the combat task.
+func (d *Duel) ChangePosition(id InstanceID, position Position, face Face) error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
+	}
+	if d.turn.phase != Phase1 {
+		return fmt.Errorf("%w: changing position is a phase 1 action and the turn is in %s", ErrWrongPhase, d.turn.phase)
+	}
+	if !validPositionFace(position, face) {
+		return fmt.Errorf("%w: %s %s is not a coherent position and face", ErrInvalidPositionChange, face, position)
+	}
+
+	p := d.activeParticipant()
+	card, ok := p.Field().Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q is not on the field of %q", ErrCardNotFound, id, p.ID())
+	}
+	if card.Card().Type() != CardTypeMonster {
+		return fmt.Errorf("%w: %q is a %s, not a monster", ErrInvalidPositionChange, id, card.Card().Type())
+	}
+	if card.positionChanged() {
+		return fmt.Errorf("%w: %q already changed its position in this turn", ErrInvalidPositionChange, id)
+	}
+	if card.Position() == position && card.Face() == face {
+		return fmt.Errorf("%w: %q is already in %s %s", ErrInvalidPositionChange, id, face, position)
+	}
+	if card.Face() == FaceUp && face == FaceDown {
+		return fmt.Errorf("%w: %q is a face-up monster and cannot be turned face-down", ErrInvalidPositionChange, id)
+	}
+
+	return p.changePosition(id, position, face)
+}
+
 // EndPhase1 ends Phase 1 of the current Turn and starts Phase 2
 // (game-rules §11, Story Mode MVP: the turn runs Phase 1, Phase 2 and End
 // Turn). It is only allowed in Phase 1.
