@@ -607,6 +607,8 @@ Quando um Monstro exige tributos:
 * Monstros face-down podem ser utilizados;
 * os Monstros tributados vão para o Graveyard.
 
+> **Story Mode MVP:** os tributos não vêm do campo. São as cartas selecionadas antes da última na ação de seleção, descarte e colocação (seção 13.3), e saem da **mão**. Elas precisam ser Monstros e vão para o Graveyard, na ordem da seleção. A seção 16 define o número **mínimo** de tributos por Weight; selecionar mais Monstros do que o mínimo é permitido, e os excedentes também vão para o Graveyard. Para o MVP, este bloco prevalece sobre as regras gerais desta seção (tributos no campo, Monstros na mão não utilizáveis).
+
 ## 17.1 Preparação de tributos
 
 Como existe apenas uma colocação por Phase 1, não é possível realizar uma sequência de Summons para criar tributos na mesma Phase 1.

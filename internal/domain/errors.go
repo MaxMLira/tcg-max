@@ -76,4 +76,37 @@ var (
 	// the freeze itself is the S3 design decision (mvp-story-mode §1.2, "duel
 	// ends immediately").
 	ErrDuelEnded = errors.New("duel has ended")
+
+	// ErrWrongPhase reports an action performed in a Phase where it is not
+	// permitted (game-rules §11, §14 and §23, Story Mode MVP): the placement
+	// and the position actions and EndPhase1 are Phase 1 actions, and EndTurn
+	// is a Phase 2 action.
+	ErrWrongPhase = errors.New("action not allowed in the current phase")
+
+	// ErrPlacementUsed reports a second placement in the same Phase 1: only
+	// one placement is allowed per Phase 1 (game-rules §14.1).
+	ErrPlacementUsed = errors.New("a card was already placed in this phase 1")
+
+	// ErrInvalidSelection reports a malformed selection for the placement
+	// action: a size outside 1 to 4, a card selected more than once, or a
+	// non-Monster among the selected cards (mvp-story-mode §1.5 and A4,
+	// game-rules §17).
+	ErrInvalidSelection = errors.New("invalid card selection")
+
+	// ErrInvalidPlacement reports a card that cannot be placed: a Monster
+	// without enough tributes for its Weight, or a position and face that are
+	// not a legal summon (game-rules §16, §18.2 and §19).
+	ErrInvalidPlacement = errors.New("card cannot be placed")
+
+	// ErrUnsupportedCardType reports a placement of a card type without a
+	// placement rule in the current scope: Magic placement arrives with the
+	// Equipment task, and Trap placement is rejected (mvp-story-mode A2).
+	ErrUnsupportedCardType = errors.New("card type has no placement rule")
+
+	// ErrInvalidPositionChange reports a change of position of a Monster that
+	// is not permitted: an incoherent target, the current position and face
+	// again, a face-up Monster turned face-down, a second change in the same
+	// turn, or a card that is not a Monster on the Field (game-rules §18.2,
+	// §20 and §21.1, mvp-story-mode S4).
+	ErrInvalidPositionChange = errors.New("invalid position change")
 )

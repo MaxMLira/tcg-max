@@ -293,9 +293,11 @@ Set and Summon are distinct game actions even though both place cards onto the F
 
 ## Tribute
 
-A Monster given up from the Field as part of a Summoning requirement.
+A Monster given up as part of a Summoning requirement.
 
 Tributed Monsters are moved to the Graveyard.
+
+In the general game the tribute is a Monster already on the Field. In the Story Mode MVP the tributes are the Monsters selected from the hand before the last card of the selection, discard and placement action (see `mvp-story-mode.md` section 1.5).
 
 ---
 

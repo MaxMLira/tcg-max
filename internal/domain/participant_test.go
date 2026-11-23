@@ -68,10 +68,19 @@ func drawN(t *testing.T, p *Participant, n int) []*CardInstance {
 	return cards
 }
 
-// state is a comparable picture of every zone and every location.
+// fieldState is a comparable picture of a Monster's turn state on the Field.
+type fieldState struct {
+	Position Position
+	Face     Face
+	Changed  bool
+}
+
+// state is a comparable picture of every zone, every location and the
+// position, face and turn state of the Monsters on the Field.
 type state struct {
 	Deck, Hand, Monsters, MagicTraps, Graveyard []InstanceID
 	Locations                                   map[InstanceID]Location
+	FieldState                                  map[InstanceID]fieldState
 }
 
 func stateOf(p *Participant) state {
@@ -82,6 +91,7 @@ func stateOf(p *Participant) state {
 		MagicTraps: ids(p.Field().MagicTraps()),
 		Graveyard:  ids(p.Graveyard().Cards()),
 		Locations:  make(map[InstanceID]Location),
+		FieldState: make(map[InstanceID]fieldState),
 	}
 	for _, zone := range [][]*CardInstance{
 		p.Deck().Cards(), p.Hand().Cards(), p.Field().Monsters(), p.Field().MagicTraps(), p.Graveyard().Cards(),
@@ -89,6 +99,9 @@ func stateOf(p *Participant) state {
 		for _, c := range zone {
 			s.Locations[c.ID()] = c.Location()
 		}
+	}
+	for _, c := range p.Field().Monsters() {
+		s.FieldState[c.ID()] = fieldState{Position: c.Position(), Face: c.Face(), Changed: c.positionChanged()}
 	}
 	return s
 }
