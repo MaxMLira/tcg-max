@@ -88,3 +88,34 @@ func TestEndTurn_RejectedInPhase1(t *testing.T) {
 		t.Errorf("Duel state changed by the rejected EndTurn")
 	}
 }
+
+func TestEndTurn_ResetsThePlacementOfTheNextTurn(t *testing.T) {
+	// Arrange — p1 used its placement on turn 1.
+	d := duelWithP1Deck(t, weightMonster(t, 1, 2))
+	if err := d.Place([]InstanceID{"p1#1"}, PositionAttack, FaceUp); err != nil {
+		t.Fatalf("Place() = %v", err)
+	}
+	// p1's turn ends; two turns later it is p1's turn again.
+	endFullTurn(t, d) // -> p2, turn 2
+	endFullTurn(t, d) // -> p1, turn 3
+
+	// Act — p1 may place again on its new turn.
+	p1, _ := d.Participant("p1")
+	err := d.Place([]InstanceID{p1.Hand().Cards()[0].ID()}, PositionAttack, FaceUp)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("Place() on p1's second turn = %v, want success", err)
+	}
+}
+
+func TestEndPhase1AndEndTurn_RejectedInAFinishedDuel(t *testing.T) {
+	d, _ := finishedDuelWithP1Monster(t)
+
+	if err := d.EndPhase1(); !errors.Is(err, ErrDuelEnded) {
+		t.Errorf("EndPhase1() = %v, want ErrDuelEnded", err)
+	}
+	if err := d.EndTurn(); !errors.Is(err, ErrDuelEnded) {
+		t.Errorf("EndTurn() = %v, want ErrDuelEnded", err)
+	}
+}

@@ -137,6 +137,112 @@ func (d *Duel) Result() (DuelResult, bool) {
 // Finished reports whether the Duel has ended.
 func (d *Duel) Finished() bool { return d.result != nil }
 
+// requiredTributes returns the number of tributes the Weight of a Monster
+// requires for its summon (game-rules §16): 0 for 1 to 5, 1 for 6 to 8, 2 for
+// 9 to 12 and 3 for 13 and more.
+func requiredTributes(weight int) int {
+	switch {
+	case weight <= 5:
+		return 0
+	case weight <= 8:
+		return 1
+	case weight <= 12:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// activeParticipant returns the Participant who plays the current Turn. The
+// Turn always names one of the Duel's Participants, so it cannot fail.
+func (d *Duel) activeParticipant() *Participant {
+	if p := d.participants[0]; p.ID() == d.turn.participant {
+		return p
+	}
+	return d.participants[1]
+}
+
+// Place is the selection, discard and placement action (mvp-story-mode §1.5,
+// game-rules §13.3 and §14). The active Participant selects 1 to 4 distinct
+// cards from its Hand; every selected card except the last goes to the
+// Graveyard, in selection order, and the last card is placed on the Field in
+// the given position and face.
+//
+// The action is atomic: a rejected action leaves the Hand, the Field, the
+// Graveyard and the turn state unchanged. It is only allowed in Phase 1, at
+// most once per Phase 1 (game-rules §14.1).
+//
+// In this scope the selected cards must be Monsters: the non-last cards are
+// the tributes, which are Monsters (game-rules §17), and the last card is a
+// Monster whose summon requires, by Weight, 0 to 3 tributes
+// (game-rules §16). A face-down summon is only allowed without tributes
+// (game-rules §19). Placing a Magic or a Trap is rejected with
+// ErrUnsupportedCardType: Magic placement arrives with the Equipment task and
+// Trap placement is rejected (mvp-story-mode A2).
+//
+// A Monster whose summon needs tributes receives its tributes, its position
+// and its face in this same action (mvp-story-mode A4). When the action
+// succeeds, the Hand is replenished automatically (game-rules §5.2 and §7,
+// Story Mode MVP); a Deck that cannot complete the Hand loses the Duel at
+// once (game-rules §8).
+func (d *Duel) Place(selection []InstanceID, position Position, face Face) error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
+	}
+	if d.turn.phase != Phase1 {
+		return fmt.Errorf("%w: placement is a phase 1 action and the turn is in %s", ErrWrongPhase, d.turn.phase)
+	}
+	if d.placementUsed {
+		return fmt.Errorf("%w: only one placement is allowed in phase 1 (game-rules §14.1)", ErrPlacementUsed)
+	}
+	if !validPositionFace(position, face) {
+		return fmt.Errorf("%w: %s %s is not a coherent position and face", ErrInvalidPlacement, face, position)
+	}
+
+	p := d.activeParticipant()
+
+	if len(selection) < 1 || len(selection) > 4 {
+		return fmt.Errorf("%w: the selection holds %d cards and must hold 1 to 4", ErrInvalidSelection, len(selection))
+	}
+
+	seen := make(map[InstanceID]struct{}, len(selection))
+	cards := make([]*CardInstance, len(selection))
+	for i, id := range selection {
+		if _, dup := seen[id]; dup {
+			return fmt.Errorf("%w: %q is selected more than once", ErrInvalidSelection, id)
+		}
+		seen[id] = struct{}{}
+		card, ok := p.Hand().Get(id)
+		if !ok {
+			return fmt.Errorf("%w: %q is not in the hand of %q", ErrCardNotFound, id, p.ID())
+		}
+		if card.Card().Type() != CardTypeMonster {
+			if i == len(selection)-1 {
+				return fmt.Errorf("%w: a %s cannot be placed", ErrUnsupportedCardType, card.Card().Type())
+			}
+			return fmt.Errorf("%w: only monsters can be tributed", ErrInvalidSelection)
+		}
+		cards[i] = card
+	}
+
+	placed := cards[len(selection)-1]
+	tributes := len(selection) - 1
+	need := requiredTributes(placed.Card().Weight())
+	if tributes < need {
+		return fmt.Errorf("%w: a monster of weight %d requires %d tributes and the selection carries %d", ErrInvalidPlacement, placed.Card().Weight(), need, tributes)
+	}
+	if face == FaceDown && tributes > 0 {
+		return fmt.Errorf("%w: a monster summoned with tributes must enter face-up (game-rules §19)", ErrInvalidPlacement)
+	}
+
+	if err := p.applyPlacement(selection, position, face); err != nil {
+		return err
+	}
+
+	d.placementUsed = true
+	return d.replenishHand(p.ID())
+}
+
 // EndPhase1 ends Phase 1 of the current Turn and starts Phase 2
 // (game-rules §11, Story Mode MVP: the turn runs Phase 1, Phase 2 and End
 // Turn). It is only allowed in Phase 1.
