@@ -15,24 +15,26 @@ type ParticipantSetup struct {
 }
 
 // Duel is the state of a match between two Participants (architecture §7,
-// ADR-011). It owns both Participants, the current Turn and, once it has
-// ended, the DuelResult.
+// ADR-011). It owns both Participants, the current Turn, the placement state
+// of the turn and, once it has ended, the DuelResult.
 //
 // The Duel engine does not know whether a Participant is a human or an AI
 // (domain rule 10). Whether the Duel is finished is derived from the result
 // (domain rule 4): there is no separate status flag.
 //
+// The actions of the Duel act for the Participant who plays the current Turn.
 // The Hand is refilled automatically; there is no manual draw (game-rules §7,
 // Story Mode MVP). Because of that the replenishment is the unexported
-// replenishHand, to be called by the Duel after a resolved action. Phases and
-// the advance to the next Turn belong to task S4.
+// replenishHand, to be called by the Duel after a resolved action. The turn
+// runs Phase 1, Phase 2 and End Turn (game-rules §11, Story Mode MVP).
 //
 // A Duel is created by NewDuel; the zero value is not usable. It holds no lock
 // and no Shuffler: it is a sequential state machine serialized by its caller.
 type Duel struct {
-	participants [2]*Participant
-	turn         Turn
-	result       *DuelResult
+	participants  [2]*Participant
+	turn          Turn
+	placementUsed bool
+	result        *DuelResult
 }
 
 // NewDuel prepares a Duel between the Participants a and b: it builds both
@@ -134,6 +136,49 @@ func (d *Duel) Result() (DuelResult, bool) {
 
 // Finished reports whether the Duel has ended.
 func (d *Duel) Finished() bool { return d.result != nil }
+
+// EndPhase1 ends Phase 1 of the current Turn and starts Phase 2
+// (game-rules §11, Story Mode MVP: the turn runs Phase 1, Phase 2 and End
+// Turn). It is only allowed in Phase 1.
+func (d *Duel) EndPhase1() error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
+	}
+	if d.turn.phase != Phase1 {
+		return fmt.Errorf("%w: the turn is already in %s", ErrWrongPhase, d.turn.phase)
+	}
+	d.turn.phase = Phase2
+	return nil
+}
+
+// EndTurn ends the current Turn and starts the next one, which the other
+// Participant plays (game-rules §11, glossary "Turn"): the turn number
+// increments, the phase returns to Phase 1, the placement of the phase is
+// fresh and the turn-specific state of the Monsters is reset
+// (architecture §12). It is only allowed in Phase 2: the MVP turn runs Phase
+// 1, Phase 2 and End Turn.
+func (d *Duel) EndTurn() error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
+	}
+	if d.turn.phase != Phase2 {
+		return fmt.Errorf("%w: ending the turn is a phase 2 action and the turn is in %s", ErrWrongPhase, d.turn.phase)
+	}
+
+	var next ParticipantID
+	if d.participants[0].ID() == d.turn.participant {
+		next = d.participants[1].ID()
+	} else {
+		next = d.participants[0].ID()
+	}
+
+	d.turn = Turn{number: d.turn.number + 1, participant: next, phase: Phase1}
+	d.placementUsed = false
+	for _, p := range d.participants {
+		p.resetTurnState()
+	}
+	return nil
+}
 
 // replenishHand refills the Hand of the Participant with the given id up to
 // HandLimit cards (game-rules §5.2 and §7, Story Mode MVP). It is the only way

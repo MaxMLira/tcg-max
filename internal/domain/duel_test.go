@@ -51,12 +51,17 @@ type duelState struct {
 	Turn     Turn
 	Result   DuelResult
 	Finished bool
+	// PlacementUsed is the Phase 1 placement flag of the current turn.
+	PlacementUsed bool
 }
 
 func duelStateOf(d *Duel) duelState {
 	res, _ := d.Result()
 	ps := d.Participants()
-	return duelState{P1: stateOf(ps[0]), P2: stateOf(ps[1]), Turn: d.Turn(), Result: res, Finished: d.Finished()}
+	return duelState{
+		P1: stateOf(ps[0]), P2: stateOf(ps[1]), Turn: d.Turn(),
+		Result: res, Finished: d.Finished(), PlacementUsed: d.placementUsed,
+	}
 }
 
 func TestNewDuel_RejectsInvalidSetups(t *testing.T) {
