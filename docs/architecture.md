@@ -588,12 +588,15 @@ Conceptually:
 ```text
 Turn
 ├── Number
-└── ParticipantID
+├── ParticipantID
+└── Phase
 ```
 
-The Duel coordinates turn transitions.
+The Duel coordinates turn transitions. In the Story Mode MVP the turn runs `PHASE_1`, `PHASE_2` and End Turn: the Duel moves from `PHASE_1` to `PHASE_2`, and ending the turn is only allowed from `PHASE_2`. It gives the turn to the other Participant, increments the number and returns to `PHASE_1`.
 
 Turn-specific state must be reset when a new turn begins.
+
+In the current implementation the Duel resets the placement flag of the phase and, for each Monster, whether it changed its position in the turn (`CardInstance.changed`).
 
 For example:
 
@@ -601,7 +604,7 @@ For example:
 CardInstance.AttacksPerformed = 0
 ```
 
-for the appropriate monsters.
+for the appropriate monsters. `AttacksPerformed` arrives with the combat task.
 
 ---
 

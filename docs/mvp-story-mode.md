@@ -35,7 +35,7 @@ Deadline: **2026-11-12**.
 * Hand limit: 4 cards.
 * The first player cannot attack during their first turn.
 * A duel ends immediately when a player's Life Points reach 0 or less.
-* A full monster field prevents summoning unless tributes free a slot.
+* A full monster field prevents summoning. In the MVP the tributes are cards selected from the hand (section 1.5), so they never free a field slot: a full monster area always blocks a new summon.
 * Both Participants use the same Duel Engine; the engine has no human/AI-specific rules.
 
 ### 1.3 Card types and subtypes
@@ -84,6 +84,15 @@ One atomic player action, performed in Phase 1 and subject to one placement per 
 * On success, the hand is automatically replenished to 4 cards; if the deck cannot complete it, the player loses immediately.
 * One selected card means placing that card with no discard. Four selected cards means the first three go to the Graveyard and the fourth is placed.
 * This action **replaces the separate discard step**. There is no discard-only action.
+
+Tributes and position (decided in S4):
+
+* The cards selected before the last one are the **tributes** of the summon. They come from the hand, not from the field, and they must be Monsters. This replaces, for the MVP, the general rule that tributes are Monsters already on the field (`docs/game-rules.md` section 17).
+* The last card must be a Monster in the current scope. A Magic as the last card is rejected until the Equipment task (S5), and a Trap is rejected (A2).
+* The Weight sets the **minimum** number of tributes (`docs/game-rules.md` section 16): Weight 1 to 5 needs 0, 6 to 8 needs 1, 9 to 12 needs 2 and 13 or more needs 3. Selecting more tributes than the minimum is allowed: the extra selected Monsters also go to the Graveyard. The documents do not forbid it.
+* A face-down summon is only allowed without tributes (`docs/game-rules.md` section 19), and a face-down Monster is always in Defense.
+* A full monster area always blocks the summon (section 1.2).
+* Changing the position of a Monster is a Phase 1 action that does not count as a placement (`docs/game-rules.md` section 14.2). A Monster changes its position at most once per turn, and a Monster placed in Phase 1 may change its position in that same Phase 1.
 
 ### 1.6 Password hashing
 
@@ -137,7 +146,7 @@ Agents: Planner, Developer, Reviewer, QA. Priority: Critical, High, Optional. No
 | S1b | Extensible Monster subtype on `Card` (sections 1.3, 1.4): Monster requires a valid subtype; Magic and Trap reject one; Equipment declares its one accepted subtype; the four MVP subtypes are provided | S1 | Monster without subtype rejected; Magic/Trap with a Monster subtype rejected; blank subtype rejected; a new subtype value works without domain changes; Equipment accepts only its subtype; tests pass. | Critical | Developer | Done (committed on branch `s1b-monster-subtype`; Reviewer APPROVED, Tester PASS) |
 | S2 | CardInstance, zones (Deck, Hand, Field, Graveyard), Participant, LP by level | S1b | Hand limit 4; 4 monster slots; 4 Magic/Trap slots; shuffle injectable; LP 4000 for levels 1-4 and 8000 for level 5 (levels 6-10 are outside the MVP and rejected). The Graveyard is one per Participant. The Field accepts Trap in the Magic/Trap area (Trap placement rejection, A2, is S4). | Critical | Developer | Done (committed on branch `s2-card-instance-zones`; Reviewer APPROVED, Tester PASS_WITH_WARNINGS) |
 | S3 | Duel setup and automatic hand replenishment (1.2) | S2 | The Duel rejects two Participants with the same id before starting (S2 does not check it, and InstanceIDs are `<participant id>#<n>`, so equal ids would collide); both players start with exactly 4 random cards from their own decks; no extra card for the first player; replenishment to 4 after a resolved action; no manual draw; insufficient deck loses immediately; the first-turn fact is exposed as `Turn.IsFirst` for the S6 combat action to enforce the no-attack rule; fixed seed is deterministic. | Critical | Developer | Done (committed on branch `s3-duel-setup`; Reviewer APPROVED, Tester PASS) |
-| S4 | Summon with tributes, face-down rules, change position, full-field rule, and the selection/discard/placement action (1.5) | S3 | Tribute tiers 0/1/2/3 by weight; full field blocks summon unless tributes free a slot; 1-4 selected cards, last placed, others to Graveyard; illegal last card rejects the whole action with no discard; hand replenished after success; no discard-only action; one placement per Phase 1. | Critical | Developer | Todo |
+| S4 | Summon with tributes, face-down rules, change position, full-field rule, and the selection/discard/placement action (1.5) | S3 | Tribute tiers 0/1/2/3 by weight (tributes are the non-last selected Monsters from the hand); a full monster area blocks the summon; 1-4 selected cards, last placed, others to Graveyard; illegal last card rejects the whole action with no discard; hand replenished after success; no discard-only action; one placement per Phase 1; Phase 1, Phase 2 and End Turn flow. | Critical | Developer | Done (committed on branch `s4-placement`; Reviewer APPROVED, Tester PASS) |
 | S5 | Magic Equipment (1.4): placement in a free Magic/Trap zone, Phase 2 activation, linking, +800 ATK, Graveyard on monster leaving | S4 | Activation rejected outside Phase 2, from the hand, when not placed, or with no compatible face-up Monster; Equipment stays in its zone linked to the target; bonuses stack; matching subtype only; a monster leaving the field sends all linked Equipment to the Graveyard; a fifth Magic/Trap placement is rejected; base Card never mutated. | Critical | Developer | Todo |
 | S6 | CombatResolver, attack action, direct attack, LP and win/lose | S4 | All combat cases of game-rules 26-27; ATK includes Equipment bonuses; direct attack only when the opponent has no monsters; the first player cannot attack on its first turn (game-rules §6); duel ends at 0 LP or less. | Critical | Developer | Todo |
 | S7 | Legal-action enumerator, controller interface, basic AI | S5, S6 | AI plays only enumerated actions; no human/AI branching in the engine; AI-vs-AI simulations finish without illegal actions. | Critical | Developer | Todo |
