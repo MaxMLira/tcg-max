@@ -230,3 +230,71 @@ func (p *Participant) replenishHand() error {
 	}
 	return nil
 }
+
+// applyPlacement performs the zone movements of a placement action that the
+// Duel has already validated (mvp-story-mode §1.5): every selected card
+// except the last leaves the Hand and goes to the Graveyard, in selection
+// order, and the last card goes to the Field carrying the given position and
+// face.
+//
+// selection must hold distinct ids of the Participant's Hand and the last
+// card must fit the Field; the Duel checks both before calling. The checks
+// are repeated here, without mutating, before anything moves, so a failure
+// changes no zone (a rejected action leaves state unchanged).
+func (p *Participant) applyPlacement(selection []InstanceID, position Position, face Face) error {
+	cards := make([]*CardInstance, len(selection))
+	for i, id := range selection {
+		card, ok := p.hand.Get(id)
+		if !ok {
+			return fmt.Errorf("%w: %q is not in the hand of %q", ErrCardNotFound, id, p.id)
+		}
+		cards[i] = card
+	}
+	if err := p.field.canAdd(cards[len(cards)-1]); err != nil {
+		return err
+	}
+
+	for _, card := range cards[:len(cards)-1] {
+		if err := p.transfer(card, LocationGraveyard,
+			nil, // the Graveyard has no capacity limit
+			func() error { _, err := p.hand.remove(card.ID()); return err },
+			p.addToGraveyard,
+		); err != nil {
+			return err
+		}
+	}
+
+	placed := cards[len(cards)-1]
+	if err := p.transfer(placed, LocationField,
+		p.field.canAdd,
+		func() error { _, err := p.hand.remove(placed.ID()); return err },
+		p.field.add,
+	); err != nil {
+		return err
+	}
+
+	placed.setFieldState(position, face)
+	return nil
+}
+
+// changePosition applies a position change that the Duel has already
+// validated (game-rules §20 and §21.1). It is not a zone transition: the
+// Monster stays on the Field and only its position and face change, so it
+// does not go through transfer.
+func (p *Participant) changePosition(id InstanceID, position Position, face Face) error {
+	card, ok := p.field.Get(id)
+	if !ok {
+		return fmt.Errorf("%w: %q is not on the field of %q", ErrCardNotFound, id, p.id)
+	}
+	card.setFieldState(position, face)
+	card.markPositionChanged()
+	return nil
+}
+
+// resetTurnState clears the turn-specific state of the Participant's Monsters
+// on the Field (architecture §12). The Duel calls it when a new turn begins.
+func (p *Participant) resetTurnState() {
+	for _, card := range p.field.Monsters() {
+		card.resetTurnState()
+	}
+}
