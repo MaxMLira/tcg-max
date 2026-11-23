@@ -87,6 +87,12 @@ func (l Location) String() string {
 // single writer, the transfer between the owner's zones (see Participant),
 // which is the only code allowed to change it.
 //
+// A Monster on the Field also carries its position and face (game-rules
+// §18 and §21), meaningful only while it is in the Field; the placement and
+// the position-change transitions are the only writers. Whether the Monster
+// changed its position in the current turn is turn-specific state that the
+// Duel resets when a new turn begins (architecture §12, game-rules §21.1).
+//
 // Instances are created only by the deck expansion of DeckZone, so the zero
 // value is not usable and the constructor is not exported.
 type CardInstance struct {
@@ -94,6 +100,9 @@ type CardInstance struct {
 	card     *Card
 	owner    ParticipantID
 	location Location
+	position Position
+	face     Face
+	changed  bool // position changed during the current turn (game-rules §21.1)
 }
 
 // newCardInstance validates and builds an instance that starts in the Deck.
@@ -122,6 +131,45 @@ func (c *CardInstance) Owner() ParticipantID { return c.owner }
 
 // Location returns the zone that currently holds the instance.
 func (c *CardInstance) Location() Location { return c.location }
+
+// Position returns the Monster's position on the Field (game-rules §21). It
+// is meaningful only for a Monster in LocationField; for any other card or
+// zone it returns the zero Position.
+func (c *CardInstance) Position() Position { return c.position }
+
+// Face returns the Monster's face on the Field (game-rules §18). It is
+// meaningful only for a Monster in LocationField; for any other card or zone
+// it returns the zero Face.
+func (c *CardInstance) Face() Face { return c.face }
+
+// positionChanged reports whether the Monster changed its position during the
+// current turn (game-rules §21.1, mvp-story-mode S4). The Duel resets it when
+// a new turn begins.
+func (c *CardInstance) positionChanged() bool { return c.changed }
+
+// setFieldState is the single writer of the position and the face. Only the
+// placement and the position-change transitions of the owning Participant may
+// call it. The pair must be coherent (see validPositionFace): a face-down
+// Monster is always in Defense (game-rules §18.2). The callers validate the
+// pair before calling; an incoherent pair here is a programming error, so it
+// panics instead of silently storing an invalid state. The pair is meaningful
+// only while the instance is a Monster on the Field.
+func (c *CardInstance) setFieldState(position Position, face Face) {
+	if !validPositionFace(position, face) {
+		panic(fmt.Sprintf("setFieldState of %q with incoherent pair %s %s", c.id, face, position))
+	}
+	c.position = position
+	c.face = face
+}
+
+// markPositionChanged records a position change of the current turn
+// (game-rules §21.1).
+func (c *CardInstance) markPositionChanged() { c.changed = true }
+
+// resetTurnState clears the turn-specific state of the instance
+// (architecture §12). The Duel calls it, through the owning Participant, when
+// a new turn begins.
+func (c *CardInstance) resetTurnState() { c.changed = false }
 
 // setLocation is the single writer of the location. Only the transfer between
 // zones may call it, so the location always equals the containing zone.
