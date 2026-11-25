@@ -298,3 +298,69 @@ func (p *Participant) resetTurnState() {
 		card.resetTurnState()
 	}
 }
+
+// activateEquipment links the Magic Equipment with the given id to the
+// Monster with the given id (game-rules §35.2.4). The Duel has already checked
+// that it accepts an action (the Duel has no result) and that the turn is in
+// Phase 2; both ids refer to this Participant's zones.
+//
+// It calculates the outcome before mutating anything (domain rule 6): every
+// rule is checked without changing a zone, and the single link is applied only
+// when all of them hold. Each rule, rejected with
+// ErrInvalidEquipmentActivation:
+//
+//   - the Equipment must be on the Field — it cannot be activated from the
+//     hand, the deck or the Graveyard (game-rules §35.2: placement precedes
+//     activation);
+//   - the card must be a Magic Equipment, not a plain Magic or a Trap
+//     (game-rules §35.2, docs/mvp-story-mode.md §1.4);
+//   - the Equipment must not be linked already, because the MVP defines no
+//     re-link (game-rules §35.2.4: the Equipment "permanece vinculada");
+//   - the target must be a Monster on the Field of this Participant
+//     (game-rules §35.2.4: the Monster is on the player's own field);
+//   - the target must be face-up (game-rules §35.2.4);
+//   - the accepted subtype of the Equipment must be the subtype of the target
+//     (game-rules §35.2 and §10.1.1).
+//
+// An Equipment id that is not in any of this Participant's zones is reported
+// with ErrCardNotFound, like the other zone lookups. A rejected activation
+// leaves every zone, and every link, unchanged.
+func (p *Participant) activateEquipment(equipmentID, monsterID InstanceID) error {
+	equipment, ok := p.field.Get(equipmentID)
+	if !ok {
+		switch {
+		case p.hand.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the hand of %q and cannot be activated from the hand", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		case p.deck.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the deck of %q and is not placed on the Field", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		case p.graveyard.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the graveyard of %q and is not on the Field", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		default:
+			return fmt.Errorf("%w: %q is not a card of %q", ErrCardNotFound, equipmentID, p.id)
+		}
+	}
+
+	if !equipment.Card().IsEquipment() {
+		return fmt.Errorf("%w: %q is a %s, not a Magic Equipment", ErrInvalidEquipmentActivation, equipmentID, equipment.Card().Type())
+	}
+	if linked := equipment.EquipmentLink(); linked != "" {
+		return fmt.Errorf("%w: %q is already linked to %q and the MVP defines no re-link", ErrInvalidEquipmentActivation, equipmentID, linked)
+	}
+
+	target, ok := p.field.Get(monsterID)
+	if !ok {
+		return fmt.Errorf("%w: %q is not a Monster on the Field of %q", ErrInvalidEquipmentActivation, monsterID, p.id)
+	}
+	if target.Card().Type() != CardTypeMonster {
+		return fmt.Errorf("%w: %q is a %s, not a Monster", ErrInvalidEquipmentActivation, monsterID, target.Card().Type())
+	}
+	if target.Face() != FaceUp {
+		return fmt.Errorf("%w: %q is face-down and an Equipment requires a face-up Monster (game-rules §35.2.4)", ErrInvalidEquipmentActivation, monsterID)
+	}
+	if !equipment.Card().AcceptsMonsterSubtype(target.Card().Subtype()) {
+		return fmt.Errorf("%w: %q accepts %s Monsters and %q is a %s", ErrInvalidEquipmentActivation, equipmentID, equipment.Card().AcceptedMonsterSubtype(), monsterID, target.Card().Subtype())
+	}
+
+	equipment.setEquipmentLink(monsterID)
+	return nil
+}
