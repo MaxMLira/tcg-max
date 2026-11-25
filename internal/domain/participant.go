@@ -144,19 +144,43 @@ func (p *Participant) PlaceFromHand(id InstanceID) error {
 }
 
 // SendFieldCardToGraveyard moves the card with the given id from the Field to
-// the Graveyard (game-rules §31). It returns ErrCardNotFound, leaving all state
-// unchanged, when the card is not on this Participant's Field.
+// the Graveyard (game-rules §31). When the card is a Monster, every Magic
+// Equipment linked to it leaves the Field with it and is sent to the
+// Graveyard after it, in the order it occupies the Magic/Trap area, and the
+// links are cleared: no Equipment stays linked to a Monster that is not on
+// the Field (game-rules §35.2.3). It returns ErrCardNotFound, leaving all
+// state unchanged, when the card is not on this Participant's Field.
 func (p *Participant) SendFieldCardToGraveyard(id InstanceID) error {
 	card, ok := p.field.Get(id)
 	if !ok {
 		return fmt.Errorf("%w: %q is not on the field of %q", ErrCardNotFound, id, p.id)
 	}
 
-	return p.transfer(card, LocationGraveyard,
+	// The Equipment linked to the Monster are collected while it is still on
+	// the Field, so the links are readable when they are sent away.
+	var linked []*CardInstance
+	if card.Card().Type() == CardTypeMonster {
+		linked = p.field.equipmentLinkedTo(id)
+	}
+
+	if err := p.transfer(card, LocationGraveyard,
 		nil, // the Graveyard has no capacity limit
 		func() error { _, err := p.field.remove(id); return err },
 		p.addToGraveyard,
-	)
+	); err != nil {
+		return err
+	}
+	for _, eq := range linked {
+		if err := p.transfer(eq, LocationGraveyard,
+			nil, // the Graveyard has no capacity limit
+			func() error { _, err := p.field.remove(eq.ID()); return err },
+			p.addToGraveyard,
+		); err != nil {
+			return err
+		}
+		eq.setEquipmentLink("")
+	}
+	return nil
 }
 
 // addToGraveyard adapts the infallible Graveyard.add to the put step of
@@ -298,6 +322,8 @@ func (p *Participant) changePosition(id InstanceID, position Position, face Face
 
 // resetTurnState clears the turn-specific state of the Participant's Monsters
 // on the Field (architecture §12). The Duel calls it when a new turn begins.
+// The equipment links are not turn state and are left alone: the bonus
+// persists while the Equipment stays equipped (game-rules §38).
 func (p *Participant) resetTurnState() {
 	for _, card := range p.field.Monsters() {
 		card.resetTurnState()
