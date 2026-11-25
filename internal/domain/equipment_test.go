@@ -271,6 +271,7 @@ func TestPlace_RejectsAnEquipmentAmongTheTributes(t *testing.T) {
 		t.Errorf("Duel state changed by a rejected selection")
 	}
 }
+
 func TestActivateEquipment_RejectedOutsidePhase2(t *testing.T) {
 	// Arrange — the Equipment is placed and the turn is back in Phase 1 of a
 	// later p1 turn. Activation is a Phase 2 action (game-rules §35.2).
@@ -753,4 +754,167 @@ func TestActivateEquipment_RejectedInAFinishedDuel(t *testing.T) {
 	if got := duelStateOf(d); !reflect.DeepEqual(got, before) {
 		t.Errorf("Duel state changed after the Duel ended")
 	}
+}
+
+func TestSendFieldCardToGraveyard_SendsTheLinkedEquipmentsToTheGraveyard(t *testing.T) {
+	// Arrange — the Monster holds two linked Equipments.
+	d, monster, equipment := duelWithEquipment(t, SubtypeDragon(), SubtypeDragon())
+	for _, eq := range equipment {
+		if err := d.ActivateEquipment(eq, monster); err != nil {
+			t.Fatalf("ActivateEquipment(%q) returned unexpected error: %v", eq, err)
+		}
+	}
+	p1, _ := d.Participant("p1")
+
+	// Act
+	if err := p1.SendFieldCardToGraveyard(monster); err != nil {
+		t.Fatalf("SendFieldCardToGraveyard(%q) returned unexpected error: %v", monster, err)
+	}
+
+	// Assert — the Monster and every linked Equipment are in the Graveyard.
+	if _, ok := p1.Graveyard().Get(monster); !ok {
+		t.Errorf("the Monster %q is not in the Graveyard", monster)
+	}
+	for _, eq := range equipment {
+		card, ok := p1.Graveyard().Get(eq)
+		if !ok {
+			t.Errorf("the Equipment %q is not in the Graveyard", eq)
+			continue
+		}
+		if got := card.EquipmentLink(); got != "" {
+			t.Errorf("EquipmentLink of %q = %q, want the link cleared", eq, got)
+		}
+		if got := card.Location(); got != LocationGraveyard {
+			t.Errorf("Location of %q = %s, want %s", eq, got, LocationGraveyard)
+		}
+	}
+	if n := len(p1.Field().MagicTraps()); n != 0 {
+		t.Errorf("magic/trap area holds %d cards, want 0", n)
+	}
+	if n := len(p1.Field().Monsters()); n != 0 {
+		t.Errorf("monster area holds %d cards, want 0", n)
+	}
+	if got := p1.Field().EquipmentBonusFor(monster); got != 0 {
+		t.Errorf("EquipmentBonusFor(%q) = %d, want 0: no Equipment is linked anymore", monster, got)
+	}
+	assertInvariants(t, p1)
+}
+
+func TestSendFieldCardToGraveyard_OnlyTheLinkedEquipmentsLeaveWithTheMonster(t *testing.T) {
+	// Arrange — one Equipment is linked to the Dragon Monster and the other
+	// one (another subtype) is placed but never activated.
+	d, monster, equipment := duelWithEquipment(t, SubtypeDragon(), SubtypeWarrior())
+	if err := d.ActivateEquipment(equipment[0], monster); err != nil {
+		t.Fatalf("ActivateEquipment() returned unexpected error: %v", err)
+	}
+	p1, _ := d.Participant("p1")
+
+	// Act
+	if err := p1.SendFieldCardToGraveyard(monster); err != nil {
+		t.Fatalf("SendFieldCardToGraveyard(%q) returned unexpected error: %v", monster, err)
+	}
+
+	// Assert — the linked Equipment followed the Monster to the Graveyard.
+	if _, ok := p1.Graveyard().Get(equipment[0]); !ok {
+		t.Errorf("the linked Equipment %q is not in the Graveyard", equipment[0])
+	}
+	// The unlinked Equipment stays on the Field, still unlinked.
+	card, ok := p1.Field().Get(equipment[1])
+	if !ok {
+		t.Fatalf("the unlinked Equipment %q is not on the Field", equipment[1])
+	}
+	if got := card.EquipmentLink(); got != "" {
+		t.Errorf("EquipmentLink of the unlinked Equipment = %q, want none", got)
+	}
+	if got := p1.Field().EquipmentBonusFor(monster); got != 0 {
+		t.Errorf("EquipmentBonusFor(%q) = %d, want 0", monster, got)
+	}
+	assertInvariants(t, p1)
+}
+
+func TestSendFieldCardToGraveyard_LeavesTheStateUnchangedWhenTheCardIsNotOnTheField(t *testing.T) {
+	// Arrange — the Equipment is on the Field; the id to send is in the Hand.
+	d, _, equipment := duelWithEquipment(t, SubtypeDragon())
+	p1, _ := d.Participant("p1")
+	inHand := p1.Hand().Cards()[0].ID()
+	before := duelStateOf(d)
+
+	// Act
+	err := p1.SendFieldCardToGraveyard(inHand)
+
+	// Assert
+	if !errors.Is(err, ErrCardNotFound) {
+		t.Fatalf("SendFieldCardToGraveyard(%q) error = %v, want ErrCardNotFound", inHand, err)
+	}
+	if got := duelStateOf(d); !reflect.DeepEqual(got, before) {
+		t.Errorf("Duel state changed by a rejected transition")
+	}
+	if _, ok := p1.Field().Get(equipment[0]); !ok {
+		t.Errorf("the Equipment %q is no longer on the Field", equipment[0])
+	}
+	assertInvariants(t, p1)
+}
+
+// cardFingerprint holds every readable attribute of a Card definition, so a
+// test can prove the base definition was never mutated by a duel operation
+// (domain rule 7).
+type cardFingerprint struct {
+	id           CardID
+	name         string
+	typ          CardType
+	atk, def, wt int
+	subtype      MonsterSubtype
+	accepted     MonsterSubtype
+	isEquipment  bool
+}
+
+// fingerprintOf reads the public definition of card into a comparable value.
+func fingerprintOf(c *Card) cardFingerprint {
+	return cardFingerprint{
+		id:          c.ID(),
+		name:        c.Name(),
+		typ:         c.Type(),
+		atk:         c.ATK(),
+		def:         c.DEF(),
+		wt:          c.Weight(),
+		subtype:     c.Subtype(),
+		accepted:    c.AcceptedMonsterSubtype(),
+		isEquipment: c.IsEquipment(),
+	}
+}
+
+func TestActivateEquipment_LeavesTheBaseCardUntouched(t *testing.T) {
+	// Arrange — snapshot every attribute of the Monster and the Equipment
+	// definitions before the activation (domain rule 7).
+	d, monster, equipment := duelWithEquipment(t, SubtypeDragon())
+	p1, _ := d.Participant("p1")
+	monsterCard, _ := p1.Field().Get(monster)
+	equipmentCard, _ := p1.Field().Get(equipment[0])
+	monsterBefore := fingerprintOf(monsterCard.Card())
+	equipmentBefore := fingerprintOf(equipmentCard.Card())
+
+	// Act
+	if err := d.ActivateEquipment(equipment[0], monster); err != nil {
+		t.Fatalf("ActivateEquipment() returned unexpected error: %v", err)
+	}
+	if err := p1.SendFieldCardToGraveyard(monster); err != nil {
+		t.Fatalf("SendFieldCardToGraveyard() returned unexpected error: %v", err)
+	}
+
+	// Assert — the definitions still hold exactly the attributes they had
+	// before the link and the removal: the +800 bonus lived only in the
+	// instance state of the Field, now gone with the link.
+	if got, want := fingerprintOf(monsterCard.Card()), monsterBefore; got != want {
+		t.Errorf("Monster definition changed: got %+v, want %+v", got, want)
+	}
+	if got, want := fingerprintOf(equipmentCard.Card()), equipmentBefore; got != want {
+		t.Errorf("Equipment definition changed: got %+v, want %+v", got, want)
+	}
+	if got, want := monsterCard.Card().ATK(), 1000; got != want {
+		t.Errorf("Monster base ATK = %d, want %d (unchanged)", got, want)
+	}
+	if got := p1.Field().EquipmentBonusFor(monster); got != 0 {
+		t.Errorf("EquipmentBonusFor(%q) = %d, want 0 after the removal", monster, got)
+	}
+	assertInvariants(t, p1)
 }

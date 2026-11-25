@@ -75,12 +75,16 @@ type fieldState struct {
 	Changed  bool
 }
 
-// state is a comparable picture of every zone, every location and the
-// position, face and turn state of the Monsters on the Field.
+// state is a comparable picture of every zone, every location, the position,
+// face and turn state of the Monsters on the Field, and the Equipment links.
 type state struct {
 	Deck, Hand, Monsters, MagicTraps, Graveyard []InstanceID
 	Locations                                   map[InstanceID]Location
 	FieldState                                  map[InstanceID]fieldState
+	// Links holds the equipment link of every instance that has one
+	// (game-rules §35.2.4), so a rejected action cannot change a link
+	// unnoticed.
+	Links map[InstanceID]InstanceID
 }
 
 func stateOf(p *Participant) state {
@@ -92,12 +96,16 @@ func stateOf(p *Participant) state {
 		Graveyard:  ids(p.Graveyard().Cards()),
 		Locations:  make(map[InstanceID]Location),
 		FieldState: make(map[InstanceID]fieldState),
+		Links:      make(map[InstanceID]InstanceID),
 	}
 	for _, zone := range [][]*CardInstance{
 		p.Deck().Cards(), p.Hand().Cards(), p.Field().Monsters(), p.Field().MagicTraps(), p.Graveyard().Cards(),
 	} {
 		for _, c := range zone {
 			s.Locations[c.ID()] = c.Location()
+			if link := c.EquipmentLink(); link != "" {
+				s.Links[c.ID()] = link
+			}
 		}
 	}
 	for _, c := range p.Field().Monsters() {
@@ -151,6 +159,31 @@ func assertInvariants(t *testing.T, p *Participant) {
 	}
 	if n := len(p.Field().MagicTraps()); n > MagicTrapSlots {
 		t.Errorf("magic/trap area holds %d cards, limit is %d", n, MagicTrapSlots)
+	}
+
+	// No Equipment may stay linked to a Monster that is not on the Field
+	// (game-rules §35.2.3), and only an Equipment in the Field may hold a
+	// link at all.
+	onField := make(map[InstanceID]bool)
+	for _, m := range p.Field().Monsters() {
+		onField[m.ID()] = true
+	}
+	for _, z := range zones {
+		for _, c := range z.cards {
+			link := c.EquipmentLink()
+			if link == "" {
+				continue
+			}
+			if !c.Card().IsEquipment() {
+				t.Errorf("instance %q is a %s but holds the equipment link %q", c.ID(), c.Card().Type(), link)
+			}
+			if c.Location() != LocationField {
+				t.Errorf("instance %q is in the %s but still holds the equipment link %q", c.ID(), z.name, link)
+			}
+			if !onField[link] {
+				t.Errorf("instance %q is linked to %q, which is not a Monster on the Field", c.ID(), link)
+			}
+		}
 	}
 }
 
