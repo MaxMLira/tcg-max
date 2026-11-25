@@ -44,6 +44,16 @@ func (h *Hand) Get(id InstanceID) (*CardInstance, bool) {
 	return nil, false
 }
 
+// contains reports whether the instance with the given id is in the Hand.
+func (h *Hand) contains(id InstanceID) bool {
+	for _, card := range h.cards {
+		if card.ID() == id {
+			return true
+		}
+	}
+	return false
+}
+
 // canAdd reports why card cannot be added, without changing the Hand. A full
 // Hand rejects with ErrHandFull (game-rules §5.2).
 func (h *Hand) canAdd(card *CardInstance) error {

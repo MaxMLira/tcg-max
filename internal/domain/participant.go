@@ -144,19 +144,43 @@ func (p *Participant) PlaceFromHand(id InstanceID) error {
 }
 
 // SendFieldCardToGraveyard moves the card with the given id from the Field to
-// the Graveyard (game-rules §31). It returns ErrCardNotFound, leaving all state
-// unchanged, when the card is not on this Participant's Field.
+// the Graveyard (game-rules §31). When the card is a Monster, every Magic
+// Equipment linked to it leaves the Field with it and is sent to the
+// Graveyard after it, in the order it occupies the Magic/Trap area, and the
+// links are cleared: no Equipment stays linked to a Monster that is not on
+// the Field (game-rules §35.2.3). It returns ErrCardNotFound, leaving all
+// state unchanged, when the card is not on this Participant's Field.
 func (p *Participant) SendFieldCardToGraveyard(id InstanceID) error {
 	card, ok := p.field.Get(id)
 	if !ok {
 		return fmt.Errorf("%w: %q is not on the field of %q", ErrCardNotFound, id, p.id)
 	}
 
-	return p.transfer(card, LocationGraveyard,
+	// The Equipment linked to the Monster are collected while it is still on
+	// the Field, so the links are readable when they are sent away.
+	var linked []*CardInstance
+	if card.Card().Type() == CardTypeMonster {
+		linked = p.field.equipmentLinkedTo(id)
+	}
+
+	if err := p.transfer(card, LocationGraveyard,
 		nil, // the Graveyard has no capacity limit
 		func() error { _, err := p.field.remove(id); return err },
 		p.addToGraveyard,
-	)
+	); err != nil {
+		return err
+	}
+	for _, eq := range linked {
+		if err := p.transfer(eq, LocationGraveyard,
+			nil, // the Graveyard has no capacity limit
+			func() error { _, err := p.field.remove(eq.ID()); return err },
+			p.addToGraveyard,
+		); err != nil {
+			return err
+		}
+		eq.setEquipmentLink("")
+	}
+	return nil
 }
 
 // addToGraveyard adapts the infallible Graveyard.add to the put step of
@@ -273,7 +297,12 @@ func (p *Participant) applyPlacement(selection []InstanceID, position Position, 
 		return err
 	}
 
-	placed.setFieldState(position, face)
+	// The position and face belong to a summoned Monster (game-rules §15); a
+	// Magic Equipment placed in the Magic/Trap area has neither
+	// (game-rules §9.2), so the pair is applied to Monsters only.
+	if placed.Card().Type() == CardTypeMonster {
+		placed.setFieldState(position, face)
+	}
 	return nil
 }
 
@@ -293,8 +322,76 @@ func (p *Participant) changePosition(id InstanceID, position Position, face Face
 
 // resetTurnState clears the turn-specific state of the Participant's Monsters
 // on the Field (architecture §12). The Duel calls it when a new turn begins.
+// The equipment links are not turn state and are left alone: the bonus
+// persists while the Equipment stays equipped (game-rules §38).
 func (p *Participant) resetTurnState() {
 	for _, card := range p.field.Monsters() {
 		card.resetTurnState()
 	}
+}
+
+// activateEquipment links the Magic Equipment with the given id to the
+// Monster with the given id (game-rules §35.2.4). The Duel has already checked
+// that it accepts an action (the Duel has no result) and that the turn is in
+// Phase 2; both ids refer to this Participant's zones.
+//
+// It calculates the outcome before mutating anything (domain rule 6): every
+// rule is checked without changing a zone, and the single link is applied only
+// when all of them hold. Each rule, rejected with
+// ErrInvalidEquipmentActivation:
+//
+//   - the Equipment must be on the Field — it cannot be activated from the
+//     hand, the deck or the Graveyard (game-rules §35.2: placement precedes
+//     activation);
+//   - the card must be a Magic Equipment, not a plain Magic or a Trap
+//     (game-rules §35.2, docs/mvp-story-mode.md §1.4);
+//   - the Equipment must not be linked already, because the MVP defines no
+//     re-link (game-rules §35.2.4: the Equipment "permanece vinculada");
+//   - the target must be a Monster on the Field of this Participant
+//     (game-rules §35.2.4: the Monster is on the player's own field);
+//   - the target must be face-up (game-rules §35.2.4);
+//   - the accepted subtype of the Equipment must be the subtype of the target
+//     (game-rules §35.2 and §10.1.1).
+//
+// An Equipment id that is not in any of this Participant's zones is reported
+// with ErrCardNotFound, like the other zone lookups. A rejected activation
+// leaves every zone, and every link, unchanged.
+func (p *Participant) activateEquipment(equipmentID, monsterID InstanceID) error {
+	equipment, ok := p.field.Get(equipmentID)
+	if !ok {
+		switch {
+		case p.hand.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the hand of %q and cannot be activated from the hand", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		case p.deck.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the deck of %q and is not placed on the Field", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		case p.graveyard.contains(equipmentID):
+			return fmt.Errorf("%w: %q is in the graveyard of %q and is not on the Field", ErrInvalidEquipmentActivation, equipmentID, p.id)
+		default:
+			return fmt.Errorf("%w: %q is not a card of %q", ErrCardNotFound, equipmentID, p.id)
+		}
+	}
+
+	if !equipment.Card().IsEquipment() {
+		return fmt.Errorf("%w: %q is a %s, not a Magic Equipment", ErrInvalidEquipmentActivation, equipmentID, equipment.Card().Type())
+	}
+	if linked := equipment.EquipmentLink(); linked != "" {
+		return fmt.Errorf("%w: %q is already linked to %q and the MVP defines no re-link", ErrInvalidEquipmentActivation, equipmentID, linked)
+	}
+
+	target, ok := p.field.Get(monsterID)
+	if !ok {
+		return fmt.Errorf("%w: %q is not a Monster on the Field of %q", ErrInvalidEquipmentActivation, monsterID, p.id)
+	}
+	if target.Card().Type() != CardTypeMonster {
+		return fmt.Errorf("%w: %q is a %s, not a Monster", ErrInvalidEquipmentActivation, monsterID, target.Card().Type())
+	}
+	if target.Face() != FaceUp {
+		return fmt.Errorf("%w: %q is face-down and an Equipment requires a face-up Monster (game-rules §35.2.4)", ErrInvalidEquipmentActivation, monsterID)
+	}
+	if !equipment.Card().AcceptsMonsterSubtype(target.Card().Subtype()) {
+		return fmt.Errorf("%w: %q accepts %s Monsters and %q is a %s", ErrInvalidEquipmentActivation, equipmentID, equipment.Card().AcceptedMonsterSubtype(), monsterID, target.Card().Subtype())
+	}
+
+	equipment.setEquipmentLink(monsterID)
+	return nil
 }

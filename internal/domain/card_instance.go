@@ -93,6 +93,15 @@ func (l Location) String() string {
 // changed its position in the current turn is turn-specific state that the
 // Duel resets when a new turn begins (architecture §12, game-rules §21.1).
 //
+// A Magic Equipment in the Field also carries its link to the equipped
+// Monster (game-rules §35.2.4), meaningful only while it is linked; the
+// activation and the transition that removes the Monster from the Field are
+// the only writers. The link is not turn-specific: the bonus it grants
+// persists while the Equipment stays equipped (game-rules §38), so the Duel
+// never resets it. The Monster holds no reference to its Equipment: the
+// +800 ATK bonus is derived from the links of the Field, and the base Card
+// definition is never mutated (domain rule 7).
+//
 // Instances are created only by the deck expansion of DeckZone, so the zero
 // value is not usable and the constructor is not exported.
 type CardInstance struct {
@@ -103,6 +112,11 @@ type CardInstance struct {
 	position Position
 	face     Face
 	changed  bool // position changed during the current turn (game-rules §21.1)
+
+	// equipmentLink is the id of the Monster a Magic Equipment is linked to
+	// (game-rules §35.2.4); the zero value means "not linked". Only an
+	// Equipment in the Field can hold a link.
+	equipmentLink InstanceID
 }
 
 // newCardInstance validates and builds an instance that starts in the Deck.

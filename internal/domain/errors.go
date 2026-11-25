@@ -109,4 +109,13 @@ var (
 	// turn, or a card that is not a Monster on the Field (game-rules §18.2,
 	// §20 and §21.1, mvp-story-mode S4).
 	ErrInvalidPositionChange = errors.New("invalid position change")
+
+	// ErrInvalidEquipmentActivation reports an activation of a Magic
+	// Equipment that is not permitted (game-rules §35.2,
+	// docs/mvp-story-mode.md §1.4): the Equipment is not on the Field, the
+	// card is not an Equipment, the Equipment is already linked to a Monster
+	// (the MVP defines no re-link), the target is not a face-up Monster on the
+	// Field of the active Participant, or the target's subtype does not match
+	// the accepted subtype of the Equipment.
+	ErrInvalidEquipmentActivation = errors.New("invalid equipment activation")
 )

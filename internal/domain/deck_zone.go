@@ -73,3 +73,13 @@ func (d *DeckZone) draw() (*CardInstance, error) {
 	d.cards = d.cards[1:]
 	return top, nil
 }
+
+// contains reports whether the instance with the given id is in the Deck.
+func (d *DeckZone) contains(id InstanceID) bool {
+	for _, card := range d.cards {
+		if card.ID() == id {
+			return true
+		}
+	}
+	return false
+}
