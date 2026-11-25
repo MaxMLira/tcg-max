@@ -273,7 +273,12 @@ func (p *Participant) applyPlacement(selection []InstanceID, position Position, 
 		return err
 	}
 
-	placed.setFieldState(position, face)
+	// The position and face belong to a summoned Monster (game-rules §15); a
+	// Magic Equipment placed in the Magic/Trap area has neither
+	// (game-rules §9.2), so the pair is applied to Monsters only.
+	if placed.Card().Type() == CardTypeMonster {
+		placed.setFieldState(position, face)
+	}
 	return nil
 }
 

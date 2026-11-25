@@ -165,26 +165,32 @@ func (d *Duel) activeParticipant() *Participant {
 // Place is the selection, discard and placement action (mvp-story-mode §1.5,
 // game-rules §13.3 and §14). The active Participant selects 1 to 4 distinct
 // cards from its Hand; every selected card except the last goes to the
-// Graveyard, in selection order, and the last card is placed on the Field in
-// the given position and face.
+// Graveyard, in selection order, and the last card is placed on the Field.
 //
 // The action is atomic: a rejected action leaves the Hand, the Field, the
 // Graveyard and the turn state unchanged. It is only allowed in Phase 1, at
 // most once per Phase 1 (game-rules §14.1).
 //
-// In this scope the selected cards must be Monsters: the non-last cards are
-// the tributes, which are Monsters (game-rules §17), and the last card is a
-// Monster whose summon requires, by Weight, 0 to 3 tributes
-// (game-rules §16). A face-down summon is only allowed without tributes
-// (game-rules §19). Placing a Magic or a Trap is rejected with
-// ErrUnsupportedCardType: Magic placement arrives with the Equipment task and
-// Trap placement is rejected (mvp-story-mode A2).
+// The cards selected before the last one are Monsters, the tributes of a
+// summon (game-rules §17, Story Mode MVP); when the placed card is a Magic
+// Equipment they are simply discarded. The last card is either a Monster,
+// whose summon requires, by Weight, 0 to 3 tributes (game-rules §16) and
+// whose given position and face are validated as a legal summon (a face-down
+// summon is only allowed without tributes, game-rules §19), or a Magic
+// Equipment (game-rules §35.2, mvp-story-mode §1.4), placed in a free slot
+// of the Magic/Trap area: for an Equipment the position and face are ignored
+// and not validated, because the Magic/Trap area carries no position or face
+// state (game-rules §9.2). A plain Magic (one that is not an Equipment) and
+// a Trap have no placement rule in the current scope and are rejected with
+// ErrUnsupportedCardType (mvp-story-mode A2).
 //
-// A Monster whose summon needs tributes receives its tributes, its position
-// and its face in this same action (mvp-story-mode A4). When the action
-// succeeds, the Hand is replenished automatically (game-rules §5.2 and §7,
-// Story Mode MVP); a Deck that cannot complete the Hand loses the Duel at
-// once (game-rules §8).
+// Placement and activation are distinct operations (mvp-story-mode §1.4):
+// this action only puts the Equipment in its zone; linking it to a Monster
+// is the Phase 2 action ActivateEquipment. A Monster whose summon needs
+// tributes receives its tributes, its position and its face in this same
+// action (mvp-story-mode A4). When the action succeeds, the Hand is
+// replenished automatically (game-rules §5.2 and §7, Story Mode MVP); a Deck
+// that cannot complete the Hand loses the Duel at once (game-rules §8).
 func (d *Duel) Place(selection []InstanceID, position Position, face Face) error {
 	if d.result != nil {
 		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
@@ -194,9 +200,6 @@ func (d *Duel) Place(selection []InstanceID, position Position, face Face) error
 	}
 	if d.placementUsed {
 		return fmt.Errorf("%w: only one placement is allowed in phase 1 (game-rules §14.1)", ErrPlacementUsed)
-	}
-	if !validPositionFace(position, face) {
-		return fmt.Errorf("%w: %s %s is not a coherent position and face", ErrInvalidPlacement, face, position)
 	}
 
 	p := d.activeParticipant()
@@ -216,23 +219,36 @@ func (d *Duel) Place(selection []InstanceID, position Position, face Face) error
 		if !ok {
 			return fmt.Errorf("%w: %q is not in the hand of %q", ErrCardNotFound, id, p.ID())
 		}
-		if card.Card().Type() != CardTypeMonster {
-			if i == len(selection)-1 {
-				return fmt.Errorf("%w: a %s cannot be placed", ErrUnsupportedCardType, card.Card().Type())
-			}
+		last := i == len(selection)-1
+		switch {
+		case card.Card().Type() == CardTypeMonster:
+			// the summon rules run below
+		case last && card.Card().IsEquipment():
+			// a Magic Equipment may be the placed card (game-rules §35.2)
+		case last:
+			return fmt.Errorf("%w: a %s cannot be placed", ErrUnsupportedCardType, card.Card().Type())
+		default:
 			return fmt.Errorf("%w: only monsters can be tributed", ErrInvalidSelection)
 		}
 		cards[i] = card
 	}
 
 	placed := cards[len(selection)-1]
-	tributes := len(selection) - 1
-	need := requiredTributes(placed.Card().Weight())
-	if tributes < need {
-		return fmt.Errorf("%w: a monster of weight %d requires %d tributes and the selection carries %d", ErrInvalidPlacement, placed.Card().Weight(), need, tributes)
-	}
-	if face == FaceDown && tributes > 0 {
-		return fmt.Errorf("%w: a monster summoned with tributes must enter face-up (game-rules §19)", ErrInvalidPlacement)
+	if placed.Card().Type() == CardTypeMonster {
+		// The position and face, and the tribute requirements, belong to the
+		// summon of a Monster (game-rules §15 to §19); an Equipment placed in
+		// the Magic/Trap area has no position, face or tributes.
+		if !validPositionFace(position, face) {
+			return fmt.Errorf("%w: %s %s is not a coherent position and face", ErrInvalidPlacement, face, position)
+		}
+		tributes := len(selection) - 1
+		need := requiredTributes(placed.Card().Weight())
+		if tributes < need {
+			return fmt.Errorf("%w: a monster of weight %d requires %d tributes and the selection carries %d", ErrInvalidPlacement, placed.Card().Weight(), need, tributes)
+		}
+		if face == FaceDown && tributes > 0 {
+			return fmt.Errorf("%w: a monster summoned with tributes must enter face-up (game-rules §19)", ErrInvalidPlacement)
+		}
 	}
 
 	if err := p.applyPlacement(selection, position, face); err != nil {
@@ -243,18 +259,6 @@ func (d *Duel) Place(selection []InstanceID, position Position, face Face) error
 	return d.replenishHand(p.ID())
 }
 
-// ChangePosition changes the position of a Monster of the active Participant
-// on its Field (game-rules §21.1). It is a phase 1 action and it does not
-// count as a placement (game-rules §14.2).
-//
-// A face-up Monster switches between Attack and Defense; a face-down Monster
-// is revealed by its controller and enters face-up, in Attack or Defense
-// (game-rules §20). The target must be a coherent pair (a face-down Monster
-// is always in Defense, game-rules §18.2) and different from the current
-// position and face, and a Monster changes its position at most once per turn
-// (mvp-story-mode S4). The restriction that a Monster that attacked in the
-// turn cannot change its position (game-rules §21.1) is enforced by the
-// combat state of the combat task.
 func (d *Duel) ChangePosition(id InstanceID, position Position, face Face) error {
 	if d.result != nil {
 		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
