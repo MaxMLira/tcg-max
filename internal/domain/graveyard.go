@@ -38,6 +38,17 @@ func (g *Graveyard) Get(id InstanceID) (*CardInstance, bool) {
 	return nil, false
 }
 
+// contains reports whether the instance with the given id is in the
+// Graveyard.
+func (g *Graveyard) contains(id InstanceID) bool {
+	for _, card := range g.cards {
+		if card.ID() == id {
+			return true
+		}
+	}
+	return false
+}
+
 // add appends card after the cards already in the Graveyard. The Graveyard is
 // unbounded, so adding never fails.
 func (g *Graveyard) add(card *CardInstance) {
