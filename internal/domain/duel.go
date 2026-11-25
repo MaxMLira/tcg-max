@@ -259,6 +259,55 @@ func (d *Duel) Place(selection []InstanceID, position Position, face Face) error
 	return d.replenishHand(p.ID())
 }
 
+// ActivateEquipment activates a Magic Equipment of the active Participant
+// that was already placed in its Magic/Trap area, and links it to a
+// compatible face-up Monster of the same Participant, which then carries the
+// +800 ATK bonus of the Equipment (game-rules §35.2,
+// docs/mvp-story-mode.md §1.4).
+//
+// It is a phase 2 action (game-rules §23 and §35.2), distinct from the phase
+// 1 placement: an Equipment placed in Phase 1 may be activated in the Phase 2
+// of the same turn, but it cannot be activated before it is placed. The
+// target Monster is chosen by the caller, as game-rules §35.2.4 requires.
+//
+// The action is all-or-nothing: a rejected activation leaves the Duel
+// unchanged. It is rejected when the Duel has ended (ErrDuelEnded), when the
+// turn is not in Phase 2 (ErrWrongPhase), when the Equipment id is not in the
+// zones of the active Participant (ErrCardNotFound) or when a rule of
+// game-rules §35.2 is broken (ErrInvalidEquipmentActivation): the Equipment
+// is in the hand, the deck or the Graveyard; the card is a plain Magic or a
+// Trap, not an Equipment; the Equipment is already linked to a Monster; the
+// target is not a Monster on the Field of the active Participant; the target
+// is face-down; or the target's subtype does not match the accepted subtype
+// of the Equipment.
+//
+// No card leaves the Hand, so the automatic replenishment does not run
+// (game-rules §7, Story Mode MVP). The bonuses of several Equipment linked
+// to the same Monster add up (game-rules §35.2.2); when the equipped Monster
+// leaves the Field, every Equipment linked to it goes to the Graveyard
+// (game-rules §35.2.3).
+func (d *Duel) ActivateEquipment(equipmentID, monsterID InstanceID) error {
+	if d.result != nil {
+		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
+	}
+	if d.turn.phase != Phase2 {
+		return fmt.Errorf("%w: equipment activation is a phase 2 action and the turn is in %s", ErrWrongPhase, d.turn.phase)
+	}
+	return d.activeParticipant().activateEquipment(equipmentID, monsterID)
+}
+
+// ChangePosition changes the position of a Monster of the active Participant
+// on its Field (game-rules §21.1). It is a phase 1 action and it does not
+// count as a placement (game-rules §14.2).
+//
+// A face-up Monster switches between Attack and Defense; a face-down Monster
+// is revealed by its controller and enters face-up, in Attack or Defense
+// (game-rules §20). The target must be a coherent pair (a face-down Monster
+// is always in Defense, game-rules §18.2) and different from the current
+// position and face, and a Monster changes its position at most once per turn
+// (mvp-story-mode S4). The restriction that a Monster that attacked in the
+// turn cannot change its position (game-rules §21.1) is enforced by the
+// combat state of the combat task.
 func (d *Duel) ChangePosition(id InstanceID, position Position, face Face) error {
 	if d.result != nil {
 		return fmt.Errorf("%w: cannot act in a finished duel", ErrDuelEnded)
